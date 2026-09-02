@@ -1294,13 +1294,24 @@ class TestGUIComponents(unittest.TestCase):
             if hud._tooltip_win:
                 self.assertTrue(hud._tooltip_win.winfo_exists())
                 # Verify child labels inside tooltip card have anchor='w' / left alignment
-                labels = [w for w in hud._tooltip_win.winfo_children()[0].winfo_children() if isinstance(w, ctk.CTkLabel)]
+                card = hud._tooltip_win.winfo_children()[0]
+                labels = [w for w in card.winfo_children() if isinstance(w, ctk.CTkLabel)]
                 self.assertGreater(len(labels), 3)
                 for lbl in labels:
                     self.assertEqual(lbl.cget("anchor"), "w")
-            hud._on_bubble_hover_leave()
-            hud._check_tooltip_dismiss()
-            self.assertIsNone(hud._tooltip_win)
+
+                # Test moving onto tooltip keeps tooltip active
+                hud._on_bubble_hover_enter()
+                self.assertIsNotNone(hud._tooltip_win)
+
+                # Test leaving tooltip dismisses it when pointer is outside
+                hud._on_bubble_hover_leave()
+                hud._check_tooltip_dismiss()
+                self.assertIsNone(hud._tooltip_win)
+            else:
+                hud._on_bubble_hover_leave()
+                hud._check_tooltip_dismiss()
+                self.assertIsNone(hud._tooltip_win)
 
             # 3. Test Click on bubble (without dragging) -> Expands full HUD
             class MockClickEvent:

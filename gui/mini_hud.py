@@ -598,6 +598,24 @@ class MiniHUD(ctk.CTkToplevel):
                 except Exception:
                     pass
 
+    def _bind_tooltip_events(self, widget):
+        """Recursively binds hover enter and leave events to tooltip window and its children."""
+        def _bind_single(w):
+            for sub in [w, getattr(w, "_canvas", None), getattr(w, "_label", None), getattr(w, "_text_label", None), getattr(w, "_image_label", None)]:
+                if sub is not None and hasattr(sub, "bind"):
+                    try:
+                        sub.bind("<Enter>", self._on_bubble_hover_enter, add="+")
+                        sub.bind("<Leave>", self._on_bubble_hover_leave, add="+")
+                    except Exception:
+                        pass
+
+        _bind_single(widget)
+        try:
+            for child in widget.winfo_children():
+                self._bind_tooltip_events(child)
+        except Exception:
+            pass
+
     def _get_tooltip_text(self) -> str:
         """Generates a comprehensive live stats report for the floating bubble hover tooltip matching the full Mini-Hub."""
         if not self.last_report:
@@ -852,6 +870,7 @@ class MiniHUD(ctk.CTkToplevel):
             card.pack(fill="both", expand=True, padx=2, pady=2)
 
             self._build_tooltip_content(card)
+            self._bind_tooltip_events(self._tooltip_win)
 
             self._tooltip_win.update_idletasks()
             scale = self._get_scale()
@@ -978,7 +997,7 @@ class MiniHUD(ctk.CTkToplevel):
                 tw_y = self._tooltip_win.winfo_rooty()
                 tw_w = self._tooltip_win.winfo_width()
                 tw_h = self._tooltip_win.winfo_height()
-                if (tw_x <= mx <= tw_x + tw_w) and (tw_y <= my <= tw_y + tw_h):
+                if (tw_x - 4 <= mx <= tw_x + tw_w + 4) and (tw_y - 4 <= my <= tw_y + tw_h + 4):
                     return
 
             self._hide_tooltip()
