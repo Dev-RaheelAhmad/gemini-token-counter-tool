@@ -1,0 +1,77 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches & Test outputs
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Configuration & user data
+.config/
+config.json
+account_usage.json
+account_ledger.jsonl
+.perm_check
+.gemini-token-counter/
+
+# Secrets, keys, and environment files
+.env
+.env.*
+!.env.example
+*.env
+*.key
+*.pem
+*.pfx
+*.p12
+*.cert
+*.crt
+credentials.json
+client_secrets.json
+google_accounts.json
+oauth_creds.json
+jetski-standalone-oauth-token
+
+# Graphify & internal agent tools
+graphify-out/
+core/graphify-out/
+.agents/
+task.md
+tasks.md
+**/task.md
+**/tasks.md
+/src/task.md
+/src/tasks.md
+
+# Session export files, logs, and CSV exports
+session_*_report.json
+*.log
+*.tmp
+*.csv
+
+# Build / Distribution
+build/
+dist/
+*.egg-info/
+
+# Operating system files
+Thumbs.db
+desktop.ini
+.DS_Store
+*.lnk
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.swp
+*.swo

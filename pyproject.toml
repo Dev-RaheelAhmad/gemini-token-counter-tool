@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gemini-token-counter"
+version = "1.0.0"
+description = "Lightweight desktop monitor, mini HUD, and CLI for Google Gemini AI token consumption & rolling rate limits."
+authors = [{name = "Raheel Ahmad", email = "dev.raheelahmad@gmail.com"}]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["gemini", "token-counter", "antigravity", "rate-limits", "desktop-monitor", "gui"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+    "Topic :: Software Development :: User Interfaces"
+]
+dependencies = [
+    "customtkinter>=6.0.0",
+    "pystray>=0.19.5",
+    "Pillow>=10.0.0",
+    "darkdetect>=0.8.0",
+    "packaging>=23.0"
+]
+
+[project.scripts]
+token-counter = "token_counter:main"
+token-counter-gui = "token_counter_gui:main"
+
+[project.urls]
+Homepage = "https://github.com/Dev-RaheelAhmad/gemini-token-counter-tool"
+Repository = "https://github.com/Dev-RaheelAhmad/gemini-token-counter-tool.git"
+"Bug Tracker" = "https://github.com/Dev-RaheelAhmad/gemini-token-counter-tool/issues"
+
+[tool.setuptools]
+packages = ["core", "gui", "gui.components"]
+py-modules = ["token_counter", "token_counter_gui"]
