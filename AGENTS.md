@@ -14,7 +14,7 @@ These rules apply to all AI coding agents, assistants, and automated tools opera
 ## 3. Dynamic Portability & Path Handling
 - **No Hardcoded Machine Paths**: Never hardcode developer-specific absolute paths (such as `C:\Users\<user>`, `Z:\home\<user>`, `/home/<user>`).
 - **Dynamic Resolution**: Always resolve paths dynamically using OS environment variables (`%USERPROFILE%`, `%APPDATA%`, `Path.home()`, `os.environ`), dynamic UNC WSL2 queries, or drive enumeration.
-- **WSL Command Execution on Mapped Drives**: When invoking `wsl` from Windows mapped network drives (such as `Z:`), always supply the explicit target directory using the `--cd` flag (e.g. `wsl --cd <linux_path> <cmd>`) to prevent path translation warnings, or prefer native Windows tooling (`git`).
+- **WSL Command Execution on Mapped Drives**: When invoking `wsl.exe` from Windows mapped network drives (such as `Z:`), always supply the explicit target directory using the `--cd` flag (e.g. `wsl --cd <path> <cmd>`) to prevent WSL path translation warnings, or prefer native Windows tooling (`git`).
 
 ## 4. Git Staging & Pre-Commit Hygiene
 - **Pre-Commit Inspection**: Before executing `git commit` or proposing changes, verify `git status` and ensure untracked caches (`__pycache__`, `.pytest_cache`), logs (`*.log`), temporary exports (`*.tmp`, `*.csv`), or user credentials are not staged.
