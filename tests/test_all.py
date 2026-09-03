@@ -3208,6 +3208,34 @@ class TestLongRunningStabilityAndLeakPrevention(unittest.TestCase):
         app._update_watcher_activity()
         self.assertFalse(mock_watcher.is_paused())
 
+        # State 5: Main window is hidden in tray, but MiniHUD / Floating Bubble is active on desktop
+        app.state = lambda *a: "withdrawn"
+        app.winfo_viewable = lambda *a: 0
+        mock_hud = type("MockHUD", (), {
+            "winfo_exists": lambda *a: True,
+            "state": lambda *a: "normal",
+            "winfo_viewable": lambda *a: 1
+        })()
+        app.mini_hud_window = mock_hud
+        app._update_watcher_activity()
+        self.assertFalse(mock_watcher.is_paused())
+
+        # State 6: MiniHUD is closed (withdrawn), so all windows are hidden -> watcher SHOULD pause
+        mock_hud.state = lambda *a: "withdrawn"
+        mock_hud.winfo_viewable = lambda *a: 0
+        app._update_watcher_activity()
+        self.assertTrue(mock_watcher.is_paused())
+
+        # State 7: Main window hidden, MiniHUD hidden, but a child dialog is active on desktop
+        import customtkinter as ctk
+        mock_child = ctk.CTkToplevel.__new__(ctk.CTkToplevel)
+        mock_child.winfo_exists = lambda *a: True
+        mock_child.state = lambda *a: "normal"
+        mock_child.winfo_viewable = lambda *a: 1
+        app.winfo_children = lambda *a: [mock_child]
+        app._update_watcher_activity()
+        self.assertFalse(mock_watcher.is_paused())
+
     def test_watcher_periodic_countdown_refresh_when_visible(self):
         """Verifies that watcher polls and refreshes sliding window countdowns every 30s when visible."""
         from unittest.mock import patch

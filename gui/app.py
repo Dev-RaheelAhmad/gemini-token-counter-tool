@@ -1244,7 +1244,33 @@ class GeminiTokenCounterApp(ctk.CTk):
         except Exception:
             pass
 
-        ui_is_in_view = is_main_in_view or is_hud_in_view or is_analytics_in_view or is_cleaner_in_view or is_settings_in_view
+        # Dynamic scan: also inspect any other toplevel windows created by this app
+        is_any_other_window_in_view = False
+        try:
+            import tkinter as tk
+            for child in self.winfo_children():
+                if isinstance(child, (ctk.CTkToplevel, tk.Toplevel)):
+                    if child.winfo_exists() and child not in (
+                        getattr(self, "mini_hud_window", None),
+                        getattr(self, "analytics_dialog_window", None),
+                        getattr(self, "cleaner_dialog_window", None),
+                        getattr(self, "settings_dialog_window", None)
+                    ):
+                        c_state = child.state()
+                        if c_state in ("normal", "zoomed") and bool(child.winfo_viewable()):
+                            is_any_other_window_in_view = True
+                            break
+        except Exception:
+            pass
+
+        ui_is_in_view = (
+            is_main_in_view
+            or is_hud_in_view
+            or is_analytics_in_view
+            or is_cleaner_in_view
+            or is_settings_in_view
+            or is_any_other_window_in_view
+        )
 
         if ui_is_in_view:
             if self.watcher.is_paused():
