@@ -33,3 +33,11 @@ These rules apply to all AI coding agents, assistants, and automated tools opera
 - **`task.md` Initialization**: Create and maintain a `task.md` tracking file in the project root containing an actionable checklist derived directly from the implementation plan before initiating work.
 - **Continuous Progress Tracking**: Update `task.md` in real-time after each step or code change, checking off completed items (`- [x]`), marking active items (`- [/]`), and maintaining clear visibility on pending tasks (`- [ ]`).
 - **Strict Non-Negotiable Adherence**: These workflow planning and real-time tracking steps are non-negotiable rules for all AI assistants, automated coding agents, and subagents operating on this repository.
+
+## 8. Critical Workflow Protocol — Strict Branch Isolation & Safety
+- **Active Development Branch**: You must strictly perform all coding, refactoring, operational tasks, and test executions on the designated development branch (`development` or `develop`).
+- **Protected Production Branch**: The production branch (`main` / `master`) is strictly reserved for verified, stable releases. NEVER modify files, generate code, or execute commits directly on `main` / `master`.
+- **Pre-Flight Branch Check**: Before making any changes, always verify the active branch using `git branch --show-current`. If currently on `main` or `master`, switch to the development branch immediately (`git checkout development` or `git checkout develop`).
+- **Pre-Action Safety Commit**: Before executing complex refactoring or risky changes, create a clean local git snapshot so work can be rolled back safely if tests fail.
+- **Gated Merge Policy**: Propose or perform merges into the production branch ONLY after all automated test suites, linting, and CI validation pipelines pass 100% with zero regressions.
+
