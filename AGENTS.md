@@ -42,3 +42,37 @@ These rules apply to all AI coding agents, assistants, and automated tools opera
 - **Pre-Action Safety Commit**: Before executing complex refactoring or risky changes, create a clean local git snapshot so work can be rolled back safely if tests fail.
 - **Gated Merge Policy**: Propose or perform merges into the production branch ONLY after all automated test suites, linting, and CI validation pipelines pass 100% with zero regressions.
 
+## 9. Multi-Agent Programming Instruction
+
+This task is related to software development and programming.
+
+Analyze the task and, based on its scope and complexity, decide whether sub-agents are needed.
+
+When sub-agents are useful, automatically create the appropriate specialized coding sub-agents and assign each a clear responsibility.
+
+### Possible Sub-Agent Roles
+- **Architect Agent** — system architecture, technology choices, and project structure.
+- **Frontend Agent** — UI, UX, components, and client-side functionality.
+- **Backend Agent** — APIs, business logic, and server-side functionality.
+- **Database Agent** — database design, schemas, queries, and migrations.
+- **DevOps Agent** — deployment, infrastructure, CI/CD, and configuration.
+- **Testing Agent** — unit, integration, and end-to-end testing.
+- **Security Agent** — authentication, authorization, vulnerabilities, and secure coding.
+- **Code Review Agent** — code quality, bugs, maintainability, and best practices.
+- **Documentation Agent** — technical documentation, setup instructions, and API documentation.
+- **Research Agent** — unfamiliar technologies, libraries, APIs, or implementation approaches.
+
+### Rules
+- Do **not** create unnecessary sub-agents.
+- Use only the agents required for the specific task.
+- Create more specialized sub-agents when the task is complex or has multiple independent areas.
+- For simple tasks, use the minimum number of agents or no sub-agents.
+- Sub-agents must have clearly separated responsibilities.
+- Coordinate their work and integrate everything into one complete, working product.
+
+### For Each Selected Sub-Agent, Provide
+1. **Agent Type**
+2. **Responsibility**
+3. **Expected Output**
+
+Choose the sub-agents dynamically based on the task requirements and complexity.
