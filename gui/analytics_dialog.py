@@ -730,8 +730,14 @@ class AnalyticsDialog(ctk.CTkToplevel):
         self._load_data()
 
     def _load_data(self):
-        sessions = get_all_session_files()
-        active_sid = sessions[0].get("session_id") if sessions else None
+        active_sid = None
+        if hasattr(self.master, "watcher") and getattr(self.master.watcher, "latest_sessions", None):
+            active_sid = self.master.watcher.latest_sessions[0].get("session_id")
+        elif ledger.sessions:
+            active_sid = max(ledger.sessions.values(), key=lambda s: s.get("mtime", 0.0)).get("session_id")
+        else:
+            sessions = get_all_session_files()
+            active_sid = sessions[0].get("session_id") if sessions else None
 
         active_report = ledger.get_filtered_report(
             account_email=self.target_account,
@@ -771,12 +777,12 @@ class AnalyticsDialog(ctk.CTkToplevel):
         all_c = all_report.get("candidates", all_report.get("candidates_total", 0))
         all_tot = all_report.get("total", all_report.get("tokens_total", 0))
 
-        if hasattr(self.card_prompt, "update_values"):
+        if hasattr(self, "card_prompt") and hasattr(self.card_prompt, "update_values"):
             self.card_prompt.update_values(active_p, all_p)
             self.card_thinking.update_values(active_th, all_th)
             self.card_candidates.update_values(active_c, all_c)
             self.card_total.update_values(active_tot, all_tot, custom_badge=f"{len(self.current_buckets)} intervals")
-        else:
+        elif hasattr(self, "card_prompt"):
             self.card_prompt.update_value(all_p)
             self.card_thinking.update_value(all_th)
             self.card_candidates.update_value(all_c)

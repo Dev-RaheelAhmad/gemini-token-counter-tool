@@ -332,8 +332,10 @@ class SessionTable(ctk.CTkFrame):
 
     def _update_row_selection_styles(self):
         """Updates row background and border colors in-place without destroying any widgets."""
-        for idx, (sid, row_widget) in enumerate(self.row_frames):
+        for idx, item in enumerate(self.row_frames):
             try:
+                sid = item[0]
+                row_widget = item[1]
                 # Is active session on the first row of page 1
                 is_active_session = (self.current_page == 1 and idx == 0)
                 is_selected = (
@@ -423,6 +425,66 @@ class SessionTable(ctk.CTkFrame):
 
         self._last_rendered_data_fp = data_fingerprint
 
+        # Check if existing row widgets can be updated in-place without destroying and recreating widgets
+        current_sids = [s["session_id"] for s in sliced_items]
+        rendered_sids = [item[0] for item in self.row_frames] if self.row_frames else []
+
+        if current_sids and current_sids == rendered_sids and len(self.row_frames) == len(sliced_items):
+            for idx, s in enumerate(sliced_items):
+                try:
+                    item = self.row_frames[idx]
+                    sid, row = item[0], item[1]
+                    id_lbl = item[2] if len(item) > 2 else None
+                    prompt_lbl = item[3] if len(item) > 3 else None
+                    time_lbl = item[4] if len(item) > 4 else None
+                    tok_badge = item[5] if len(item) > 5 else None
+                    size_badge = item[6] if len(item) > 6 else None
+                    dot_lbl = item[7] if len(item) > 7 else None
+
+                    is_active_session = (self.current_page == 1 and idx == 0)
+                    is_selected = (
+                        (self.selected_session_id == "ACTIVE_CHAT" and is_active_session and not self.is_all_mode) or
+                        (self.selected_session_id == sid and not self.is_all_mode)
+                    )
+                    row_bg = ("#dbeafe", "#1e3a5f") if is_selected else ("white", "#1e222d")
+                    row_border = ("#3b82f6", "#3b82f6") if is_selected else ("#e2e8f0", "#283042")
+                    row.configure(fg_color=row_bg, border_color=row_border)
+
+                    if dot_lbl:
+                        dot_color = "#10B981" if is_active_session else "#94a3b8"
+                        dot_lbl.configure(text_color=dot_color)
+
+                    if id_lbl:
+                        short_id = sid if len(sid) <= 32 else f"{sid[:16]}...{sid[-8:]}"
+                        id_lbl.configure(text=f"{short_id}{' (Active)' if is_active_session else ''}")
+
+                    first_prompt = s.get("first_prompt") or s.get("title")
+                    if prompt_lbl and first_prompt and first_prompt != sid:
+                        prompt_lbl.configure(text=f"💬 {first_prompt}")
+
+                    if time_lbl:
+                        rel_time = format_relative_timestamp(s.get("last_active"), s.get("last_active_str", ""))
+                        time_lbl.configure(text=f"Last Active: {rel_time}")
+
+                    if tok_badge:
+                        from core.ledger import ledger
+                        tok_count = s.get("tokens") or ledger.sessions.get(sid, {}).get("total", 0)
+                        if tok_count >= 1000000:
+                            tok_str = f"{tok_count/1000000:.2f}M tok"
+                        elif tok_count >= 1000:
+                            tok_str = f"{tok_count/1000:.1f}K tok"
+                        else:
+                            tok_str = f"{tok_count:,} tok"
+                        tok_badge.configure(text=tok_str)
+
+                    if size_badge:
+                        size_kb = s.get("size", 0) / 1024.0
+                        size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb/1024.0:.1f} MB"
+                        size_badge.configure(text=size_str)
+                except Exception:
+                    pass
+            return
+
         # Clear existing rows cleanly
         for child in self.scroll_frame.winfo_children():
             child.destroy()
@@ -500,6 +562,7 @@ class SessionTable(ctk.CTkFrame):
             id_lbl.bind("<Button-3>", context_handler)
 
             # Prompt Snippet / Subtitle
+            prompt_lbl = None
             first_prompt = s.get("first_prompt") or s.get("title")
             if first_prompt and first_prompt != session_id:
                 prompt_lbl = ctk.CTkLabel(
@@ -571,7 +634,7 @@ class SessionTable(ctk.CTkFrame):
             size_badge.bind("<Button-1>", click_handler)
             size_badge.bind("<Button-3>", context_handler)
 
-            self.row_frames.append((s["session_id"], row))
+            self.row_frames.append((s["session_id"], row, id_lbl, prompt_lbl, time_lbl, tok_badge, size_badge, dot_label))
 
     def _show_context_menu(self, event, session: Dict):
         """Displays a context menu for the clicked session with rapid-click debouncing."""

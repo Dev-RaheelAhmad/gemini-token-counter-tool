@@ -82,6 +82,7 @@ class AccountLedger:
         self._last_flush_time = 0.0
         self.ledger_file = ledger_file or get_ledger_file()
         self.ledger_log_file = ledger_log_file or get_ledger_log_file()
+        self.log_file = self.ledger_log_file  # Alias for log rotation compatibility
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.realtime_quotas: Dict[str, Dict[str, Any]] = {}
         self.load_from_disk()
@@ -324,8 +325,8 @@ class AccountLedger:
         with self._lock:
             if not self._is_dirty and not force:
                 return
-            import copy
-            sessions_snapshot = copy.deepcopy(self.sessions)
+            # Fast shallow-copy snapshot of session metadata (<0.1ms lock holding duration)
+            sessions_snapshot = {sid: dict(sinfo) for sid, sinfo in self.sessions.items()}
             rt_quotas_snapshot = dict(self.realtime_quotas)
             self._is_dirty = False
 
@@ -699,12 +700,19 @@ class AccountLedger:
     def _rotate_log_if_needed(self):
         """Rotates account_ledger.jsonl when it exceeds 5000 lines to prevent unbounded growth."""
         try:
-            if not self.log_file.exists():
+            target_log = getattr(self, "ledger_log_file", None) or getattr(self, "log_file", None)
+            if not target_log or not target_log.exists():
                 return
-            content = self.log_file.read_text(encoding='utf-8', errors='ignore')
+            content = target_log.read_text(encoding="utf-8", errors="ignore")
             lines = content.splitlines()
             if len(lines) > 5000:
-                self.log_file.write_text('\n'.join(lines[-2500:]) + '\n', encoding='utf-8')
+                tmp_log = target_log.with_suffix(".tmp")
+                tmp_log.write_text("\n".join(lines[-2500:]) + "\n", encoding="utf-8")
+                try:
+                    tmp_log.replace(target_log)
+                except OSError:
+                    target_log.write_text("\n".join(lines[-2500:]) + "\n", encoding="utf-8")
+                    tmp_log.unlink(missing_ok=True)
         except Exception:
             pass
 

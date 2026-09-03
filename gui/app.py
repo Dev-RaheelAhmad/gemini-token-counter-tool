@@ -694,7 +694,7 @@ class GeminiTokenCounterApp(ctk.CTk):
 
             self.current_report = active_report
             self.all_report = all_report
-            self._apply_current_view()
+            self._schedule_apply_current_view(delay_ms=20)
 
         self._safe_after(0, _apply_from_worker)
 
@@ -716,21 +716,44 @@ class GeminiTokenCounterApp(ctk.CTk):
                 self.selected_account_filter = active_google_account
                 self.is_all_mode = False
 
-        # 1. Compute dual reports for the dashboard cards
-        active_report = ledger.get_filtered_report(
-            account_email=self.selected_account_filter,
-            active_only=True,
-            session_id=self.selected_session_id,
-            timeframe=self.selected_timeframe,
-            active_session_id=active_sid
+        # 1. Compute dual reports for the dashboard cards (with smart fingerprint caching)
+        import time
+        now = time.time()
+        view_fp = (
+            self.selected_account_filter,
+            self.selected_session_id,
+            self.selected_timeframe,
+            self.active_sessions_only,
+            active_sid,
+            getattr(self.watcher, "_last_sessions_fingerprint", None)
         )
-        all_report = ledger.get_filtered_report(
-            account_email=self.selected_account_filter,
-            active_only=False,
-            session_id=self.selected_session_id,
-            timeframe=self.selected_timeframe,
-            active_session_id=active_sid
-        )
+        if (
+            view_fp == getattr(self, "_last_view_fp", None)
+            and getattr(self, "_cached_active_report", None) is not None
+            and getattr(self, "_cached_all_report", None) is not None
+            and (now - getattr(self, "_last_view_calc_time", 0.0) < 3.0)
+        ):
+            active_report = self._cached_active_report
+            all_report = self._cached_all_report
+        else:
+            active_report = ledger.get_filtered_report(
+                account_email=self.selected_account_filter,
+                active_only=True,
+                session_id=self.selected_session_id,
+                timeframe=self.selected_timeframe,
+                active_session_id=active_sid
+            )
+            all_report = ledger.get_filtered_report(
+                account_email=self.selected_account_filter,
+                active_only=False,
+                session_id=self.selected_session_id,
+                timeframe=self.selected_timeframe,
+                active_session_id=active_sid
+            )
+            self._last_view_fp = view_fp
+            self._cached_active_report = active_report
+            self._cached_all_report = all_report
+            self._last_view_calc_time = now
         
         # We still use one primary report for table and gauge logic (mostly all_report)
         display_report = all_report
@@ -1155,7 +1178,7 @@ class GeminiTokenCounterApp(ctk.CTk):
     def _on_window_map(self, event):
         if event.widget == self:
             self._safe_after(50, self._update_watcher_activity)
-            self._safe_after(60, self._apply_current_view)
+            self._schedule_apply_current_view(delay_ms=60)
 
     def _on_window_unmap(self, event):
         if event.widget == self:
@@ -1164,7 +1187,7 @@ class GeminiTokenCounterApp(ctk.CTk):
     def _on_window_visibility(self, event):
         if event.widget == self:
             self._safe_after(50, self._update_watcher_activity)
-            self._safe_after(60, self._apply_current_view)
+            self._schedule_apply_current_view(delay_ms=60)
 
     def _update_watcher_activity(self):
         """

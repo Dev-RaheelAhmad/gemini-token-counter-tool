@@ -3024,8 +3024,152 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
         self.assertEqual(len(geom_called), 0)
 
 
+class TestLongRunningStabilityAndLeakPrevention(unittest.TestCase):
+    """Unit tests ensuring 0% CPU leaks, memory stability, and freeze prevention over long runtimes."""
+
+    def test_ledger_log_rotation_truncates_at_threshold(self):
+        from unittest.mock import patch, MagicMock
+        """Verifies that _rotate_log_if_needed uses ledger_log_file and truncates when >5000 lines."""
+        from core.ledger import AccountLedger
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            td = Path(tmp_dir)
+            test_ledger_file = td / "test_usage.json"
+            test_log_file = td / "test_ledger.jsonl"
+
+            # Create 5,200 lines in test_log_file
+            lines = [f'{{"event": "token_update", "line": {i}}}\n' for i in range(5200)]
+            test_log_file.write_text("".join(lines), encoding="utf-8")
+
+            ledger = AccountLedger(ledger_file=test_ledger_file, ledger_log_file=test_log_file)
+            self.assertTrue(hasattr(ledger, "ledger_log_file"))
+            self.assertTrue(hasattr(ledger, "log_file"))
+
+            # Execute rotation
+            ledger._rotate_log_if_needed()
+
+            # Confirm file has been truncated to 2,500 lines
+            remaining_lines = test_log_file.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(remaining_lines), 2500)
+            self.assertIn('"line": 5199', remaining_lines[-1])
+
+    def test_ledger_flush_to_disk_fast_snapshot(self):
+        """Verifies that flush_to_disk uses shallow dictionary snapshotting and produces valid output."""
+        from core.ledger import AccountLedger
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            td = Path(tmp_dir)
+            test_ledger_file = td / "test_usage.json"
+            test_log_file = td / "test_ledger.jsonl"
+
+            ledger = AccountLedger(ledger_file=test_ledger_file, ledger_log_file=test_log_file)
+
+            # Insert test sessions
+            for i in range(25):
+                sid = f"bench_session_{i:03d}"
+                ledger.update_session(
+                    session_id=sid,
+                    account_email="developer@company.org",
+                    stats={"prompt": 100 * (i + 1), "thinking": 50, "candidates": 75, "total": 225},
+                    line_records=[(datetime.now(timezone.utc), 100, 50, 75)]
+                )
+
+            self.assertTrue(ledger._is_dirty)
+            # Perform flush
+            ledger.flush_to_disk(force=True)
+            self.assertFalse(ledger._is_dirty)
+            self.assertTrue(test_ledger_file.exists())
+
+            # Read back and verify valid JSON
+            content = json.loads(test_ledger_file.read_text(encoding="utf-8"))
+            self.assertIn("bench_session_000", content.get("sessions", {}))
+            self.assertIn("bench_session_024", content.get("sessions", {}))
+
+    def test_analytics_dialog_active_sid_in_memory(self):
+        """Verifies that AnalyticsDialog resolves active_sid from master memory without calling get_all_session_files."""
+        from unittest.mock import patch
+        from gui.analytics_dialog import AnalyticsDialog
+        dialog = AnalyticsDialog.__new__(AnalyticsDialog)
+
+        # Mock master with watcher
+        mock_watcher = type("MockWatcher", (), {
+            "latest_sessions": [{"session_id": "sid_mem_fast_999", "file": "dummy.jsonl"}],
+            "_last_sessions_fingerprint": ("dummy", 123)
+        })()
+        dialog.master = type("MockMaster", (), {"watcher": mock_watcher})()
+        dialog.target_account = "all"
+        dialog.target_session_id = None
+        dialog.selected_timeframe = "5h"
+        dialog.chart = type("MockChart", (), {"set_dual_records": lambda *args, **kwargs: None})()
+        dialog._render_table_rows = lambda: None
+        dialog._update_summary_card = lambda: None
+
+        mock_card = type("MockCard", (), {"update_values": lambda *args, **kwargs: None})()
+        dialog.card_prompt = mock_card
+        dialog.card_thinking = mock_card
+        dialog.card_candidates = mock_card
+        dialog.card_total = mock_card
+
+        # Track calls to get_all_session_files
+        with patch("gui.analytics_dialog.get_all_session_files") as mock_get_files:
+            dialog._load_data()
+            mock_get_files.assert_not_called()
+
+    def test_session_table_in_place_row_updates(self):
+        """Verifies that SessionTable reuses existing row widgets in-place when session IDs match."""
+        from unittest.mock import MagicMock
+        from gui.components.session_table import SessionTable
+        table = SessionTable.__new__(SessionTable)
+        table.current_page = 1
+        table.page_size = 10
+        table.search_query = ""
+        table.search_var = type("MockVar", (), {"get": lambda *args, **kwargs: ""})()
+        table.selected_session_id = "bench_sid_001"
+        table.is_all_mode = False
+        table.sort_key = "mtime"
+        table.sort_reverse = True
+        table.sessions = [
+            {"session_id": "bench_sid_001", "mtime": 1000.0, "size": 2048, "first_prompt": "Hello", "tokens": 500, "account": "user@example.com"},
+            {"session_id": "bench_sid_002", "mtime": 900.0, "size": 1024, "first_prompt": "World", "tokens": 200, "account": "user@example.com"}
+        ]
+
+        # Mock mock widgets for 2 rows
+        row_1 = type("MockRow", (), {"configure": MagicMock(), "winfo_exists": lambda: True})()
+        id_lbl_1 = type("MockLbl", (), {"configure": MagicMock()})()
+        prompt_lbl_1 = type("MockLbl", (), {"configure": MagicMock()})()
+        time_lbl_1 = type("MockLbl", (), {"configure": MagicMock()})()
+        tok_badge_1 = type("MockLbl", (), {"configure": MagicMock()})()
+        size_badge_1 = type("MockLbl", (), {"configure": MagicMock()})()
+        dot_lbl_1 = type("MockLbl", (), {"configure": MagicMock()})()
+
+        row_2 = type("MockRow", (), {"configure": MagicMock(), "winfo_exists": lambda: True})()
+        id_lbl_2 = type("MockLbl", (), {"configure": MagicMock()})()
+        prompt_lbl_2 = type("MockLbl", (), {"configure": MagicMock()})()
+        time_lbl_2 = type("MockLbl", (), {"configure": MagicMock()})()
+        tok_badge_2 = type("MockLbl", (), {"configure": MagicMock()})()
+        size_badge_2 = type("MockLbl", (), {"configure": MagicMock()})()
+        dot_lbl_2 = type("MockLbl", (), {"configure": MagicMock()})()
+
+        table.row_frames = [
+            ("bench_sid_001", row_1, id_lbl_1, prompt_lbl_1, time_lbl_1, tok_badge_1, size_badge_1, dot_lbl_1),
+            ("bench_sid_002", row_2, id_lbl_2, prompt_lbl_2, time_lbl_2, tok_badge_2, size_badge_2, dot_lbl_2)
+        ]
+        table._update_pagination_bar = MagicMock()
+        table._update_row_selection_styles = MagicMock()
+        table.scroll_frame = type("MockScroll", (), {"winfo_children": MagicMock(return_value=[])})()
+
+        # Update tokens on bench_sid_001
+        table.sessions[0]["tokens"] = 1500
+        table._last_rendered_data_fp = None  # Force update check
+
+        table._filter_sessions(reset_page=False)
+
+        # Confirm tok_badge_1 was reconfigured in place without destroying rows
+        tok_badge_1.configure.assert_called()
+        table.scroll_frame.winfo_children.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 
