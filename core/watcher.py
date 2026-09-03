@@ -30,6 +30,7 @@ class SessionWatcher:
         # State cache for fast comparison
         self._last_brain_mtimes: Dict[str, float] = {}
         self._last_realtime_mtimes: Dict[str, float] = {}
+        self._last_realtime_fingerprint: tuple = ()
         self._last_active_mtime: float = 0.0
         self._last_active_size: int = 0
         self._last_sessions_fingerprint: tuple = ()
@@ -124,8 +125,9 @@ class SessionWatcher:
                 if stale_k not in current_brain_strs:
                     self._last_brain_mtimes.pop(stale_k, None)
 
-            # 2. Check real-time Google quota directory updates
-            from core.realtime_quota import get_realtime_accounts_dirs, load_all_realtime_quotas
+            # 2. Check real-time Google quota updates (stat fingerprinting quota files to defeat NTFS dir mtime blind spot)
+            from core.realtime_quota import get_realtime_accounts_dirs, load_all_realtime_quotas, get_realtime_quota_fingerprint
+            from core.account_manager import get_active_google_account, has_auth_credentials_changed, find_best_matching_account
             rt_dirs = get_realtime_accounts_dirs()
             rt_changed = False
             current_rt_strs = set()
@@ -145,8 +147,16 @@ class SessionWatcher:
                 if stale_rt not in current_rt_strs:
                     self._last_realtime_mtimes.pop(stale_rt, None)
 
-            # 3. Rescan session files if forced, brain changed, real-time changed, startup, or every 30s fallback
-            is_full_scan_due = force or brain_changed or rt_changed or not self.latest_sessions or (now - self._last_full_scan_time > 30.0)
+            # Stat-based file-level fingerprint check for in-place quota edits
+            rt_fp = get_realtime_quota_fingerprint()
+            if rt_fp != getattr(self, "_last_realtime_fingerprint", ()):
+                rt_changed = True
+                self._last_realtime_fingerprint = rt_fp
+
+            auth_changed = has_auth_credentials_changed()
+
+            # 3. Rescan session files if forced, brain changed, real-time changed, auth changed, startup, or every 30s fallback
+            is_full_scan_due = force or brain_changed or rt_changed or auth_changed or not self.latest_sessions or (now - self._last_full_scan_time > 30.0)
 
             if is_full_scan_due:
                 sessions = get_all_session_files(custom_dirs=custom_dirs)
@@ -217,7 +227,6 @@ class SessionWatcher:
                 except OSError:
                     current_live_fingerprint.append((s["session_id"], s.get("mtime", 0.0), s.get("size", 0)))
 
-            auth_changed = has_auth_credentials_changed()
             live_fp_tuple = tuple(current_live_fingerprint)
 
             time_since_report = now - self._last_report_time
@@ -243,9 +252,9 @@ class SessionWatcher:
             active_account = get_active_google_account() or "Default"
 
             # Periodically sync real-time Google quotas into the ledger
-            if rt_changed or is_full_scan_due:
+            if rt_changed or auth_changed or is_full_scan_due:
                 try:
-                    ledger.realtime_quotas = load_all_realtime_quotas()
+                    ledger.realtime_quotas = load_all_realtime_quotas(force_refresh=(rt_changed or auth_changed or force))
                 except Exception:
                     pass
 

@@ -94,16 +94,21 @@ class GeminiTokenCounterApp(ctk.CTk):
         saved_acc = config.get("selected_account")
 
         # Default to active Google account on launch
+        auto_track = bool(config.get("auto_track_active", True))
+        self._last_detected_active_email: Optional[str] = active_email
         if active_email and active_email not in ("Default", "Local", "Default / Local Account"):
             if saved_acc and saved_acc not in ("active", "active user", "👤 active user", "all", "all accounts", "", None):
                 self.selected_account_filter: str = saved_acc
                 self.is_all_mode: bool = False
+                self.is_tracking_active_account: bool = (saved_acc.lower() == active_email.lower() and auto_track)
             else:
                 self.selected_account_filter = active_email
                 self.is_all_mode = False
+                self.is_tracking_active_account = auto_track
         else:
             self.selected_account_filter = "all"
             self.is_all_mode = True
+            self.is_tracking_active_account = False
 
         self.active_sessions_only: bool = bool(config.get("active_sessions_only", True))
         self.selected_timeframe: str = str(config.get("dashboard_timeframe") or "5h")
@@ -151,10 +156,11 @@ class GeminiTokenCounterApp(ctk.CTk):
 
         # Detect active Google account resolved from initial poll
         active_email = get_active_google_account()
-        if self.selected_account_filter in ("active", "active user", "👤 active user", "Default", ""):
+        if self.is_tracking_active_account or self.selected_account_filter in ("active", "active user", "👤 active user", "Default", ""):
             if active_email and not self.is_all_mode:
                 self.selected_account_filter = active_email
                 self.is_all_mode = False
+                self._last_detected_active_email = active_email
 
         # Start live monitoring
         self.watcher.start()
@@ -695,9 +701,28 @@ class GeminiTokenCounterApp(ctk.CTk):
                 return
             from core.account_manager import get_active_google_account
             active_email = get_active_google_account()
-            if self.selected_account_filter in ("active", "active user", "👤 active user", "Default", ""):
+            last_active = getattr(self, "_last_detected_active_email", None)
+
+            auth_switched = bool(
+                active_email
+                and last_active
+                and active_email.lower() != str(last_active).lower()
+            )
+
+            if active_email and (last_active is None or active_email.lower() != str(last_active).lower()):
+                self._last_detected_active_email = active_email
+
+            # Auto-follow the new active account if currently tracking active account
+            if self.is_tracking_active_account or self.selected_account_filter in ("active", "active user", "👤 active user", "Default", "", last_active):
                 if active_email and not self.is_all_mode:
-                    self.selected_account_filter = active_email
+                    if self.selected_account_filter != active_email:
+                        self.selected_account_filter = active_email
+                        self.is_tracking_active_account = True
+                        self._last_view_fp = None  # Force fresh view calculation
+
+            if auth_switched:
+                self._last_view_fp = None
+                self._update_account_badge()
 
             self.current_report = active_report
             self.all_report = all_report
@@ -718,7 +743,7 @@ class GeminiTokenCounterApp(ctk.CTk):
         active_sid = sessions[0].get("session_id") if sessions else None
 
         # Resolve target account alias if needed
-        if self.selected_account_filter in ("active", "active user", "👤 active user"):
+        if self.is_tracking_active_account or self.selected_account_filter in ("active", "active user", "👤 active user"):
             if active_google_account and active_google_account not in ("Default", "Local"):
                 self.selected_account_filter = active_google_account
                 self.is_all_mode = False
@@ -936,6 +961,7 @@ class GeminiTokenCounterApp(ctk.CTk):
         if mode_all:
             self.selected_account_filter = "all"
             self.is_all_mode = True
+            self.is_tracking_active_account = False
             self.selected_session_id = None
             self.active_sessions_only = False
             self.watcher.set_target(session_id=None, mode_all=True)
@@ -949,14 +975,17 @@ class GeminiTokenCounterApp(ctk.CTk):
             active_email = get_active_google_account()
             self.selected_account_filter = active_email or "active"
             self.is_all_mode = False
+            self.is_tracking_active_account = True
             self.selected_session_id = None
             self.active_sessions_only = False
             self.watcher.set_target(session_id=None, mode_all=False)
+            config.set("selected_account", "active", save_now=False)
         else:
             self.selected_session_id = session_id
             self.watcher.set_target(session_id=session_id, mode_all=False)
 
-        config.set("selected_account", self.selected_account_filter, save_now=False)
+        if session_id is not None or mode_all:
+            config.set("selected_account", self.selected_account_filter, save_now=False)
         config.set("active_sessions_only", self.active_sessions_only, save_now=False)
         self._apply_current_view()
         self.watcher.force_refresh()
@@ -1275,12 +1304,21 @@ class GeminiTokenCounterApp(ctk.CTk):
         if target_acc == "all":
             self.selected_account_filter = "all"
             self.is_all_mode = True
+            self.is_tracking_active_account = False
             config.set("selected_account", "all", save_now=False)
         else:
             self.selected_account_filter = target_acc
             self.is_all_mode = False
-            config.set("selected_account", self.selected_account_filter, save_now=False)
+            from core.account_manager import get_active_google_account
+            active_email = get_active_google_account()
+            if active_email and (target_acc.lower() == active_email.lower() or "active" in value.lower()):
+                self.is_tracking_active_account = True
+                config.set("selected_account", "active", save_now=False)
+            else:
+                self.is_tracking_active_account = False
+                config.set("selected_account", self.selected_account_filter, save_now=False)
 
+        self._last_view_fp = None
         self.selected_session_id = None
         self._apply_current_view()
         self.watcher.force_refresh()
@@ -1346,6 +1384,8 @@ class GeminiTokenCounterApp(ctk.CTk):
 
             if self.is_all_mode or self.selected_account_filter in ("all", "all accounts", "", None) or "all" in str(self.selected_account_filter).lower():
                 target_label = all_label
+            elif getattr(self, "is_tracking_active_account", False) and active_email:
+                target_label = active_label
             else:
                 target_label = None
                 for lbl, acc in self.account_map.items():

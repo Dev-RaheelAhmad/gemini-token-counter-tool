@@ -9,6 +9,34 @@ import glob
 from core.session_finder import get_wsl_distros, get_available_drives
 
 
+def is_valid_account_email(email: Optional[str]) -> bool:
+    """
+    Validates that a string is a legitimate Google/email account identifier
+    and filters out test fixtures, mocks, and invalid tokens.
+    """
+    if not email or not isinstance(email, str):
+        return False
+    em = email.strip().lower()
+    if not em or em in ("default", "local", "none", "unknown", "default / local account"):
+        return False
+    # Discard test / mock accounts via strict match to avoid catching real users
+    test_domains = ("@test.com", "@mock.com", "@dummy.com")
+    test_prefixes = ("test@", "mock@", "dummy@", "example@", "active_tester@")
+
+    if any(em.endswith(d) for d in test_domains) or any(em.startswith(p) for p in test_prefixes):
+        return False
+    # Verify standard email structure user@domain.tld
+    if "@" not in em:
+        return False
+    parts = em.split("@")
+    if len(parts) != 2:
+        return False
+    user_part, domain_part = parts
+    if not user_part or not domain_part or "." not in domain_part:
+        return False
+    return True
+
+
 def decode_id_token_email(oauth_creds_file: Path) -> Optional[str]:
     """Decodes the email address directly from the JWT id_token inside oauth_creds.json."""
     try:
@@ -24,6 +52,26 @@ def decode_id_token_email(oauth_creds_file: Path) -> Optional[str]:
                 email = decoded.get("email")
                 if email:
                     return str(email).strip()
+    except Exception:
+        pass
+    return None
+
+
+def extract_antigravity_active_account(file_path: Path) -> Optional[str]:
+    """Extracts active account email from .antigravity_tools/accounts.json using current_account_id."""
+    try:
+        if not file_path.exists():
+            return None
+        data = json.loads(file_path.read_text(encoding="utf-8", errors="ignore"))
+        if isinstance(data, dict):
+            cur_id = data.get("current_account_id")
+            accounts = data.get("accounts", [])
+            if cur_id and isinstance(accounts, list):
+                for acc in accounts:
+                    if isinstance(acc, dict) and acc.get("id") == cur_id:
+                        em = acc.get("email")
+                        if em and is_valid_account_email(str(em)):
+                            return str(em).strip()
     except Exception:
         pass
     return None
@@ -65,7 +113,8 @@ def find_credential_files(force_refresh: bool = False) -> Dict[str, List[Path]]:
     res = {
         "google_accounts": [],
         "oauth_creds": [],
-        "jetski_tokens": []
+        "jetski_tokens": [],
+        "antigravity_accounts": [],
     }
 
     candidate_bases = [
@@ -131,6 +180,30 @@ def find_credential_files(force_refresh: bool = False) -> Dict[str, List[Path]]:
         except Exception:
             pass
 
+    # Discover Antigravity Tools accounts.json (.antigravity_tools/accounts.json)
+    ag_candidate_files = [
+        Path.home() / ".antigravity_tools" / "accounts.json",
+    ]
+    for env_var in ["USERPROFILE", "APPDATA", "LOCALAPPDATA"]:
+        if env_var in os.environ:
+            base = Path(os.environ[env_var])
+            ag_candidate_files.extend([
+                base / ".antigravity_tools" / "accounts.json",
+                base.parent / ".antigravity_tools" / "accounts.json",
+            ])
+    if os.name == "nt":
+        sys_drive = os.environ.get("SystemDrive", "C:")
+        ag_candidate_files.append(
+            Path(f"{sys_drive}\\Users\\{os.environ.get('USERNAME', '')}\\.antigravity_tools\\accounts.json")
+        )
+
+    for ag_f in ag_candidate_files:
+        try:
+            if ag_f.exists() and ag_f.is_file() and ag_f not in res["antigravity_accounts"]:
+                res["antigravity_accounts"].append(ag_f)
+        except Exception:
+            pass
+
     # Ensure default user profile .gemini path is always registered
     default_gemini = Path.home() / ".gemini"
     default_ga = default_gemini / "google_accounts.json"
@@ -155,7 +228,7 @@ def get_auth_files_fingerprint() -> tuple:
     """Returns a lightweight stat fingerprint (mtime, size) of all credential files."""
     files = find_credential_files()
     fp_list = []
-    for category in ("google_accounts", "oauth_creds", "jetski_tokens"):
+    for category in ("google_accounts", "oauth_creds", "jetski_tokens", "antigravity_accounts"):
         for f in files.get(category, []):
             try:
                 if f.exists():
@@ -175,7 +248,7 @@ def has_auth_credentials_changed() -> bool:
     current_fp = get_auth_files_fingerprint()
     if current_fp != _AUTH_FINGERPRINT:
         _AUTH_FINGERPRINT = current_fp
-        clear_known_accounts_cache()
+        clear_credential_cache()
         get_active_google_account(force_reload=True)
         return True
     return False
@@ -192,7 +265,7 @@ def set_active_google_account_in_memory(email: Optional[str]):
 def get_active_google_account(force_reload: bool = False) -> Optional[str]:
     """
     Returns the currently active logged-in Google Account email (e.g. 'user@example.com').
-    Maintains the live active account in RAM memory, checking credentials dynamically.
+    Maintains the live active account in RAM memory, dynamically checking credential recency.
     """
     global _LIVE_ACTIVE_ACCOUNT, _LAST_AUTH_CHECK_TIME, _AUTH_FINGERPRINT
     import time
@@ -201,66 +274,57 @@ def get_active_google_account(force_reload: bool = False) -> Optional[str]:
         return _LIVE_ACTIVE_ACCOUNT
 
     files = find_credential_files()
-    email = None
+    candidates: List[tuple] = []  # list of tuples: (mtime, email, source_type)
 
-    # 1. Primary: check google_accounts.json active field
-    for f in files["google_accounts"]:
+    # 1. oauth_creds.json (JWT id_token ground truth)
+    for f in files.get("oauth_creds", []):
+        try:
+            if f.exists():
+                e = decode_id_token_email(f)
+                if e and is_valid_account_email(e):
+                    candidates.append((f.stat().st_mtime, e, "oauth_creds"))
+        except Exception:
+            pass
+
+    # 2. antigravity_accounts (.antigravity_tools/accounts.json current_account_id)
+    for f in files.get("antigravity_accounts", []):
+        try:
+            if f.exists():
+                e = extract_antigravity_active_account(f)
+                if e and is_valid_account_email(e):
+                    candidates.append((f.stat().st_mtime, e, "antigravity_accounts"))
+        except Exception:
+            pass
+
+    # 3. google_accounts.json (active field)
+    for f in files.get("google_accounts", []):
         try:
             if not f.exists():
                 continue
             data = json.loads(f.read_text(encoding="utf-8", errors="ignore"))
             if isinstance(data, dict):
                 active = data.get("active")
+                em = None
                 if isinstance(active, str) and active.strip():
-                    email = active.strip()
-                    break
+                    em = active.strip()
                 elif isinstance(active, dict) and "email" in active:
-                    email = str(active["email"]).strip()
-                    break
+                    em = str(active["email"]).strip()
+                if em and is_valid_account_email(em):
+                    candidates.append((f.stat().st_mtime, em, "google_accounts"))
         except Exception:
-            continue
+            pass
 
-    # 2. High-fidelity verification: decode id_token directly from oauth_creds.json
-    if not email:
-        for f in files["oauth_creds"]:
-            e = decode_id_token_email(f)
-            if e:
-                email = e
-                break
+    if candidates:
+        # Sort descending by file mtime: the credential source updated most recently wins
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        email = candidates[0][1]
+    else:
+        email = None
 
     _LIVE_ACTIVE_ACCOUNT = email
     _LAST_AUTH_CHECK_TIME = now
     _AUTH_FINGERPRINT = get_auth_files_fingerprint()
     return _LIVE_ACTIVE_ACCOUNT
-
-
-def is_valid_account_email(email: Optional[str]) -> bool:
-    """
-    Validates that a string is a legitimate Google/email account identifier
-    and filters out test fixtures, mocks, and invalid tokens.
-    """
-    if not email or not isinstance(email, str):
-        return False
-    em = email.strip().lower()
-    if not em or em in ("default", "local", "none", "unknown", "default / local account"):
-        return False
-    # Discard test / mock accounts
-    # Discard test / mock accounts via strict match to avoid catching real users
-    test_domains = ("@test.com", "@mock.com", "@dummy.com")
-    test_prefixes = ("test@", "mock@", "dummy@", "example@", "active_tester@")
-
-    if any(em.endswith(d) for d in test_domains) or any(em.startswith(p) for p in test_prefixes):
-        return False
-    # Verify standard email structure user@domain.tld
-    if "@" not in em:
-        return False
-    parts = em.split("@")
-    if len(parts) != 2:
-        return False
-    user_part, domain_part = parts
-    if not user_part or not domain_part or "." not in domain_part:
-        return False
-    return True
 
 
 def get_all_google_accounts() -> Dict[str, Any]:
@@ -340,7 +404,19 @@ def get_all_known_accounts_list(force_refresh: bool = False) -> List[str]:
     active = get_active_google_account()
     _add_if_valid(active)
 
-    # 2. Real-time account tracker files (.antigravity_tools/accounts/*.json)
+    # 2. Antigravity Tools accounts (.antigravity_tools/accounts.json)
+    for ag_f in find_credential_files().get("antigravity_accounts", []):
+        try:
+            if ag_f.exists():
+                data = json.loads(ag_f.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(data, dict):
+                    for a_entry in data.get("accounts", []):
+                        if isinstance(a_entry, dict):
+                            _add_if_valid(a_entry.get("email"))
+        except Exception:
+            pass
+
+    # 3. Real-time account tracker files (.antigravity_tools/accounts/*.json)
     try:
         from core.realtime_quota import load_all_realtime_quotas
         rt_quotas = load_all_realtime_quotas()
@@ -350,12 +426,12 @@ def get_all_known_accounts_list(force_refresh: bool = False) -> List[str]:
     except Exception:
         pass
 
-    # 3. Old accounts from google_accounts.json
+    # 4. Old accounts from google_accounts.json
     all_acc = get_all_google_accounts()
     for o in all_acc.get("old_accounts", []):
         _add_if_valid(o)
 
-    # 4. Legitimate account emails in the ledger
+    # 5. Legitimate account emails in the ledger
     try:
         from core.ledger import ledger
         for s in ledger.sessions.values():

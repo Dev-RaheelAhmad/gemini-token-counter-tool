@@ -1764,6 +1764,67 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
             root.destroy()
 
 
+class TestGuiDynamicAccountSwitching(unittest.TestCase):
+    def setUp(self):
+        self.config_patcher = patch("core.config.config.get", side_effect=lambda k, default=None: {
+            "selected_account": "active",
+            "auto_track_active": True,
+            "active_sessions_only": False,
+            "dashboard_timeframe": "5h"
+        }.get(k, default))
+        self.config_patcher.start()
+
+    def tearDown(self):
+        self.config_patcher.stop()
+
+    def test_dynamic_account_switch_without_restart(self):
+        with patch("gui.app.SessionWatcher"), \
+             patch("core.account_manager.get_active_google_account", return_value="user1@company.org"), \
+             patch("core.account_manager.get_all_known_accounts_list", return_value=["user1@company.org", "user2@company.org"]):
+            from gui.app import GeminiTokenCounterApp
+            app = GeminiTokenCounterApp()
+            try:
+                # Initially tracks user1
+                self.assertTrue(app.is_tracking_active_account)
+                self.assertEqual(app.selected_account_filter, "user1@company.org")
+
+                # Now simulate account switch in the background to user2
+                with patch("core.account_manager.get_active_google_account", return_value="user2@company.org"):
+                    dummy_rep = {"session_id": "test", "total": 100}
+                    app._last_detected_active_email = "user1@company.org"
+                    app.is_tracking_active_account = True
+                    app._on_watcher_update(dummy_rep, dummy_rep, [])
+                    app.update()
+
+                    self.assertEqual(app.selected_account_filter, "user2@company.org")
+                    self.assertTrue(app.is_tracking_active_account)
+                    self.assertIn("user2", app.account_menu.get())
+            finally:
+                app.destroy()
+
+    def test_explicit_pinned_account_not_overridden_by_background_switch(self):
+        with patch("gui.app.SessionWatcher"), \
+             patch("core.account_manager.get_active_google_account", return_value="user1@company.org"), \
+             patch("core.account_manager.get_all_known_accounts_list", return_value=["user1@company.org", "historical@company.org"]):
+            from gui.app import GeminiTokenCounterApp
+            app = GeminiTokenCounterApp()
+            try:
+                # User explicitly selects a historical account
+                app._on_main_account_selected("historical@company.org")
+                self.assertFalse(app.is_tracking_active_account)
+                self.assertEqual(app.selected_account_filter, "historical@company.org")
+
+                # Now background account switches to user2
+                with patch("core.account_manager.get_active_google_account", return_value="user2@company.org"):
+                    dummy_rep = {"session_id": "test", "total": 100}
+                    app._on_watcher_update(dummy_rep, dummy_rep, [])
+                    app.update()
+
+                    # Pinned account remains historical@company.org
+                    self.assertEqual(app.selected_account_filter, "historical@company.org")
+                    self.assertFalse(app.is_tracking_active_account)
+            finally:
+                app.destroy()
 
 
 if __name__ == '__main__':

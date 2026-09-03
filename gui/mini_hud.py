@@ -1343,6 +1343,8 @@ class MiniHUD(ctk.CTkToplevel):
             target_acc = "all"
             if hasattr(self.master, "is_all_mode") and self.master.is_all_mode:
                 target_acc = "all"
+            elif getattr(self.master, "is_tracking_active_account", False):
+                target_acc = active_email
             elif hasattr(self.master, "selected_account_filter") and self.master.selected_account_filter:
                 target_acc = self.master.selected_account_filter
             else:
@@ -1931,9 +1933,12 @@ class MiniHUD(ctk.CTkToplevel):
 
         selected_filter = getattr(self.master, "selected_account_filter", None) if self.master else config.get("selected_account")
         is_all = getattr(self.master, "is_all_mode", False) if self.master else (selected_filter == "all")
+        is_tracking = getattr(self.master, "is_tracking_active_account", False) if self.master else (selected_filter in ("active", "active user", "👤 active user"))
 
         if is_all or selected_filter in ("all", "all accounts", "", None):
             target_label = all_label
+        elif is_tracking and active_email:
+            target_label = active_label
         else:
             target_label = None
             for lbl, acc in self.account_map.items():

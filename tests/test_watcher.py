@@ -86,6 +86,24 @@ class TestWatcher(unittest.TestCase):
             watcher._poll(force=True)
             self.assertEqual(captured_active[-1]["mode"], "account")
 
+    def test_watcher_auth_changed_triggers_realtime_quota_refresh(self):
+        watcher = SessionWatcher()
+        mock_session = {
+            "session_id": "test_watch_sess",
+            "file": "/dummy/path/log.jsonl",
+            "mtime": 1000.0,
+            "size": 500,
+            "tokens": 200,
+            "account": "user@example.com"
+        }
+        with patch("core.watcher.get_all_session_files", return_value=[mock_session]), \
+             patch("core.watcher.parse_transcript_file_cached", return_value=({"prompt": 100, "thinking": 50, "candidates": 50}, [], "Test prompt")), \
+             patch("pathlib.Path.stat", return_value=MagicMock(st_mtime=1000.0, st_size=500)), \
+             patch("core.account_manager.has_auth_credentials_changed", return_value=True), \
+             patch("core.realtime_quota.load_all_realtime_quotas") as mock_load_quotas:
+            watcher._poll(force=False)
+            mock_load_quotas.assert_called_with(force_refresh=True)
+
 
 class TestSessionWatcherIdlePause(unittest.TestCase):
     def test_watcher_pause_resume_behavior(self):

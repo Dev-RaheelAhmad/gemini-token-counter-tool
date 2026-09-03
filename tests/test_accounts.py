@@ -409,6 +409,85 @@ class TestRealtimeQuota(unittest.TestCase):
             self.assertEqual(parsed["third_party_5h"]["reset_time"], "2026-09-01T12:00:00Z")
             self.assertEqual(parsed["third_party_weekly"]["reset_time"], "2026-09-07T12:00:00Z")
 
+    def test_recency_based_account_resolution(self):
+        from core.account_manager import get_active_google_account, clear_credential_cache
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            ga_file = tmp / "google_accounts.json"
+            oc_file = tmp / "oauth_creds.json"
+
+            ga_file.write_text(json.dumps({"active": "older.user@company.org"}), encoding="utf-8")
+            # Create a dummy JWT with newer.user@company.org
+            payload = base64.urlsafe_b64encode(json.dumps({"email": "newer.user@company.org"}).encode("utf-8")).decode("utf-8").rstrip("=")
+            oc_file.write_text(json.dumps({"id_token": f"header.{payload}.sig"}), encoding="utf-8")
+
+            # Set mtime so oc_file is newer than ga_file
+            t_now = time.time()
+            os.utime(ga_file, (t_now - 100, t_now - 100))
+            os.utime(oc_file, (t_now - 10, t_now - 10))
+
+            fake_files = {
+                "google_accounts": [ga_file],
+                "oauth_creds": [oc_file],
+                "jetski_tokens": [],
+                "antigravity_accounts": []
+            }
+            with patch("core.account_manager.find_credential_files", return_value=fake_files):
+                clear_credential_cache()
+                resolved = get_active_google_account(force_reload=True)
+                self.assertEqual(resolved, "newer.user@company.org")
+
+            # Now update ga_file to be newer than oc_file
+            os.utime(ga_file, (t_now + 50, t_now + 50))
+            with patch("core.account_manager.find_credential_files", return_value=fake_files):
+                clear_credential_cache()
+                resolved_ga = get_active_google_account(force_reload=True)
+                self.assertEqual(resolved_ga, "older.user@company.org")
+
+    def test_antigravity_accounts_extraction(self):
+        from core.account_manager import extract_antigravity_active_account, get_active_google_account, clear_credential_cache
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ag_file = Path(tmpdir) / "accounts.json"
+            data = {
+                "current_account_id": "uuid-2",
+                "accounts": [
+                    {"id": "uuid-1", "email": "user1@company.org"},
+                    {"id": "uuid-2", "email": "user2@company.org"}
+                ]
+            }
+            ag_file.write_text(json.dumps(data), encoding="utf-8")
+
+            extracted = extract_antigravity_active_account(ag_file)
+            self.assertEqual(extracted, "user2@company.org")
+
+            fake_files = {
+                "google_accounts": [],
+                "oauth_creds": [],
+                "jetski_tokens": [],
+                "antigravity_accounts": [ag_file]
+            }
+            with patch("core.account_manager.find_credential_files", return_value=fake_files):
+                clear_credential_cache()
+                resolved = get_active_google_account(force_reload=True)
+                self.assertEqual(resolved, "user2@company.org")
+
+    def test_get_realtime_quota_fingerprint(self):
+        from core.realtime_quota import get_realtime_quota_fingerprint
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            f = tmp / "acc1.json"
+            f.write_text('{"email": "user@company.org"}', encoding="utf-8")
+
+            with patch("core.realtime_quota.get_realtime_accounts_dirs", return_value=[tmp]):
+                fp1 = get_realtime_quota_fingerprint()
+                self.assertIsInstance(fp1, tuple)
+                self.assertEqual(len(fp1), 1)
+
+                time.sleep(0.05)
+                f.write_text('{"email": "user@company.org", "last_used": 12345}', encoding="utf-8")
+                fp2 = get_realtime_quota_fingerprint()
+                self.assertNotEqual(fp1, fp2)
+
 
 if __name__ == "__main__":
     unittest.main()

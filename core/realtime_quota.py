@@ -271,3 +271,38 @@ def get_account_realtime_quota(email: str, ref_time: Optional[datetime] = None) 
         if k == em_clean or ('@' in k and k.split('@')[0] == em_clean) or ('@' in em_clean and em_clean.split('@')[0] == k):
             return v
     return None
+
+
+def get_realtime_quota_fingerprint() -> tuple:
+    """
+    Returns a lightweight stat fingerprint (mtime, size) of all realtime quota JSON files.
+    Allows detecting in-place file modifications on Windows NTFS where parent directory mtimes do not change.
+    """
+    try:
+        dirs = get_realtime_accounts_dirs()
+    except Exception:
+        return ()
+    fp_list = []
+    for d in dirs:
+        try:
+            if not d.exists() or not d.is_dir():
+                continue
+            for p in d.glob("*.json"):
+                try:
+                    st = p.stat()
+                    mtime = getattr(st, "st_mtime", 0.0)
+                    size = getattr(st, "st_size", 0)
+                    if not isinstance(mtime, (int, float)):
+                        mtime = 0.0
+                    if not isinstance(size, (int, float)):
+                        size = 0
+                    fp_list.append((str(p), mtime, size))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    try:
+        fp_list.sort(key=lambda x: x[0])
+    except Exception:
+        pass
+    return tuple(fp_list)

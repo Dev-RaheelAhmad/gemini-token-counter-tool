@@ -413,6 +413,40 @@ class AnalyticsDialog(ctk.CTkToplevel):
                 return lbl
         return "★ All Accounts"
 
+    def _refresh_account_menu_options(self):
+        """Refreshes the account dropdown items dynamically with latest accounts."""
+        if not hasattr(self, "account_menu"):
+            return
+        from core.account_manager import get_active_google_account, get_all_known_accounts_list
+        active_email = get_active_google_account()
+        known_accounts = get_all_known_accounts_list()
+        valid_known = [a for a in known_accounts if a not in ("Default", "Local", "Default / Local Account")]
+        num_accs = len(valid_known) if valid_known else (1 if active_email else 0)
+        all_label = f"★ All Accounts ({num_accs})" if num_accs > 0 else "★ All Accounts"
+        user_clean = active_email.split('@')[0] if active_email else "User"
+        active_label = f"👤 {user_clean}" if active_email else "👤 Active User"
+
+        account_values = [all_label]
+        self.account_map = {
+            all_label: ("all", None),
+            "All": ("all", None),
+            "★ All Accounts": ("all", None)
+        }
+
+        if active_email and active_email not in ("Default", "Local", "Default / Local Account"):
+            account_values.append(active_label)
+            self.account_map[active_label] = (active_email, None)
+
+        for acc in known_accounts:
+            if acc != active_email and acc not in ("Default", "Local", "Default / Local Account"):
+                acc_clean = acc.split('@')[0] if '@' in acc else acc
+                lbl = f"👤 {acc_clean}"
+                if lbl not in account_values:
+                    account_values.append(lbl)
+                    self.account_map[lbl] = (acc, None)
+
+        self.account_menu.configure(values=account_values)
+
     def sync_with_dashboard(
         self,
         account_email: Optional[str] = None,
@@ -429,6 +463,7 @@ class AnalyticsDialog(ctk.CTkToplevel):
         if timeframe:
             self.selected_timeframe = timeframe.lower()
 
+        self._refresh_account_menu_options()
         matched_account_label = self._find_matching_account_label(
             self.target_account,
             self.target_session_id
