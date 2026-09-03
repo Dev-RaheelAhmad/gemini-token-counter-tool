@@ -34,6 +34,7 @@ class SessionWatcher:
         self._last_active_size: int = 0
         self._last_sessions_fingerprint: tuple = ()
         self._last_full_scan_time: float = 0.0
+        self._last_report_time: float = 0.0
 
         self.latest_single_report: Optional[Dict[str, Any]] = None
         self.latest_all_report: Optional[Dict[str, Any]] = None
@@ -219,12 +220,16 @@ class SessionWatcher:
             auth_changed = has_auth_credentials_changed()
             live_fp_tuple = tuple(current_live_fingerprint)
 
+            time_since_report = now - self._last_report_time
+            is_periodic_report_due = (time_since_report >= 30.0)
+
             has_changed = (
                 force or
                 brain_changed or
                 files_changed or
                 auth_changed or
                 rt_changed or
+                is_periodic_report_due or
                 live_fp_tuple != self._last_sessions_fingerprint
             )
 
@@ -232,6 +237,7 @@ class SessionWatcher:
                 return
 
             self._last_sessions_fingerprint = live_fp_tuple
+            self._last_report_time = now
 
             # Detect active Google account
             active_account = get_active_google_account() or "Default"

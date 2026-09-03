@@ -920,5 +920,9 @@ class AnalyticsDialog(ctk.CTkToplevel):
 
     def destroy(self):
         """Cleanly destroys the analytics dialog without affecting global app timers."""
+        if hasattr(self.master, "analytics_dialog_window") and self.master.analytics_dialog_window == self:
+            self.master.analytics_dialog_window = None
         super().destroy()
+        if hasattr(self.master, "_update_watcher_activity"):
+            self.master._update_watcher_activity()
 

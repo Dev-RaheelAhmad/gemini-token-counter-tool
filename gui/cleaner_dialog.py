@@ -796,7 +796,11 @@ class CleanerDialog(ctk.CTkToplevel):
             except Exception:
                 pass
             self._copied_feedback_timer = None
+        if hasattr(self.master, "cleaner_dialog_window") and self.master.cleaner_dialog_window == self:
+            self.master.cleaner_dialog_window = None
         super().destroy()
+        if hasattr(self.master, "_update_watcher_activity"):
+            self.master._update_watcher_activity()
 
     def _open_session_in_explorer(self, session_dict: Dict[str, Any]):
         """Opens the folder of a specific session in the OS file explorer."""

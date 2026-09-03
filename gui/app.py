@@ -170,6 +170,9 @@ class GeminiTokenCounterApp(ctk.CTk):
         # Apply native Windows dark titlebar & caption color
         apply_windows_dark_titlebar(self)
 
+        # Start periodic 10-second heartbeat to ensure watcher activity matches UI visibility
+        self._safe_after(10000, self._heartbeat_watcher_activity)
+
     def _safe_after(self, delay_ms: int, func, *args):
         """Safely schedules a Tkinter .after callback only if the window exists and is not destroyed."""
         try:
@@ -1189,6 +1192,14 @@ class GeminiTokenCounterApp(ctk.CTk):
             self._safe_after(50, self._update_watcher_activity)
             self._schedule_apply_current_view(delay_ms=60)
 
+    def _heartbeat_watcher_activity(self):
+        """Periodic 10-second safety check ensuring background watcher pause/resume stays in exact sync with UI state."""
+        try:
+            self._update_watcher_activity()
+        finally:
+            if self.winfo_exists():
+                self._safe_after(10000, self._heartbeat_watcher_activity)
+
     def _update_watcher_activity(self):
         """
         Dynamically controls background watcher synchronization:
@@ -1200,7 +1211,7 @@ class GeminiTokenCounterApp(ctk.CTk):
         try:
             if self.winfo_exists():
                 state = self.state()
-                is_main_in_view = (state == "normal" and bool(self.winfo_viewable()))
+                is_main_in_view = (state in ("normal", "zoomed") and bool(self.winfo_viewable()))
         except Exception:
             pass
 
@@ -1208,28 +1219,28 @@ class GeminiTokenCounterApp(ctk.CTk):
         try:
             if self.mini_hud_window and self.mini_hud_window.winfo_exists():
                 hud_state = self.mini_hud_window.state()
-                is_hud_in_view = (hud_state == "normal")
+                is_hud_in_view = (hud_state in ("normal", "zoomed") and bool(self.mini_hud_window.winfo_viewable()))
         except Exception:
             pass
 
         is_analytics_in_view = False
         try:
             if self.analytics_dialog_window and self.analytics_dialog_window.winfo_exists():
-                is_analytics_in_view = (self.analytics_dialog_window.state() == "normal")
+                is_analytics_in_view = (self.analytics_dialog_window.state() in ("normal", "zoomed") and bool(self.analytics_dialog_window.winfo_viewable()))
         except Exception:
             pass
 
         is_cleaner_in_view = False
         try:
             if self.cleaner_dialog_window and self.cleaner_dialog_window.winfo_exists():
-                is_cleaner_in_view = (self.cleaner_dialog_window.state() == "normal")
+                is_cleaner_in_view = (self.cleaner_dialog_window.state() in ("normal", "zoomed") and bool(self.cleaner_dialog_window.winfo_viewable()))
         except Exception:
             pass
 
         is_settings_in_view = False
         try:
             if self.settings_dialog_window and self.settings_dialog_window.winfo_exists():
-                is_settings_in_view = (self.settings_dialog_window.state() == "normal")
+                is_settings_in_view = (self.settings_dialog_window.state() in ("normal", "zoomed") and bool(self.settings_dialog_window.winfo_viewable()))
         except Exception:
             pass
 
@@ -1386,6 +1397,7 @@ class GeminiTokenCounterApp(ctk.CTk):
             timeframe=timeframe
         )
         self._safe_after(50, self._raise_analytics_dialog)
+        self._update_watcher_activity()
 
     def _open_analytics_for_session(self, session_id: str):
         if self.analytics_dialog_window and self.analytics_dialog_window.winfo_exists():
@@ -1397,6 +1409,7 @@ class GeminiTokenCounterApp(ctk.CTk):
             )
             self._raise_analytics_dialog()
             self._safe_after(50, self._raise_analytics_dialog)
+            self._update_watcher_activity()
             return
 
         self.analytics_dialog_window = AnalyticsDialog(
@@ -1407,6 +1420,7 @@ class GeminiTokenCounterApp(ctk.CTk):
             timeframe=self.selected_timeframe
         )
         self._safe_after(50, self._raise_analytics_dialog)
+        self._update_watcher_activity()
 
     def _raise_analytics_dialog(self):
         """Ensures the analytics dialog is brought smoothly to the foreground above main window."""
@@ -1421,6 +1435,7 @@ class GeminiTokenCounterApp(ctk.CTk):
                     self.analytics_dialog_window._bring_to_front()
             except Exception:
                 pass
+            self._update_watcher_activity()
 
     def _open_cleaner_dialog(self):
         if self.cleaner_dialog_window and self.cleaner_dialog_window.winfo_exists():
@@ -1428,9 +1443,11 @@ class GeminiTokenCounterApp(ctk.CTk):
             self.cleaner_dialog_window.deiconify()
             self.cleaner_dialog_window.lift()
             self.cleaner_dialog_window.focus_force()
+            self._update_watcher_activity()
             return
 
         self.cleaner_dialog_window = CleanerDialog(self, on_cleanup_complete=self.refresh_data)
+        self._update_watcher_activity()
 
     def _open_settings_dialog(self):
         from tkinter import filedialog
@@ -1909,6 +1926,7 @@ class GeminiTokenCounterApp(ctk.CTk):
                 dialog.destroy()
             except Exception:
                 pass
+            self._update_watcher_activity()
 
         dialog.protocol("WM_DELETE_WINDOW", _on_dialog_close)
         dialog.bind("<Escape>", lambda e: _on_dialog_close())
@@ -1917,6 +1935,7 @@ class GeminiTokenCounterApp(ctk.CTk):
         dialog.deiconify()
         dialog.lift()
         dialog.focus_force()
+        self._update_watcher_activity()
 
     def destroy(self):
         cancel_all_pending_after_events(self)

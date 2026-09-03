@@ -3166,6 +3166,76 @@ class TestLongRunningStabilityAndLeakPrevention(unittest.TestCase):
         tok_badge_1.configure.assert_called()
         table.scroll_frame.winfo_children.assert_not_called()
 
+    def test_update_watcher_activity_zoomed_and_minimized_states(self):
+        """Verifies that _update_watcher_activity handles zoomed/normal as active, and iconic/withdrawn as paused."""
+        from gui.app import GeminiTokenCounterApp
+        app = GeminiTokenCounterApp.__new__(GeminiTokenCounterApp)
+        app.mini_hud_window = None
+        app.analytics_dialog_window = None
+        app.cleaner_dialog_window = None
+        app.settings_dialog_window = None
+
+        mock_watcher = type("MockWatcher", (), {
+            "_paused": False,
+            "is_paused": lambda self: self._paused,
+            "pause": lambda self: setattr(self, "_paused", True),
+            "resume": lambda self: setattr(self, "_paused", False),
+        })()
+        app.watcher = mock_watcher
+
+        # State 1: Normal and viewable -> watcher should NOT be paused
+        app.winfo_exists = lambda: True
+        app.state = lambda: "normal"
+        app.winfo_viewable = lambda: 1
+        app._update_watcher_activity()
+        self.assertFalse(mock_watcher.is_paused())
+
+        # State 2: Zoomed (Maximized on Windows) -> watcher should NOT be paused
+        app.state = lambda: "zoomed"
+        app.winfo_viewable = lambda: 1
+        app._update_watcher_activity()
+        self.assertFalse(mock_watcher.is_paused())
+
+        # State 3: Iconic (Minimized to taskbar) -> watcher SHOULD be paused (0% CPU)
+        app.state = lambda: "iconic"
+        app.winfo_viewable = lambda: 0
+        app._update_watcher_activity()
+        self.assertTrue(mock_watcher.is_paused())
+
+        # State 4: Restored back from minimized -> watcher SHOULD resume immediately
+        app.state = lambda: "normal"
+        app.winfo_viewable = lambda: 1
+        app._update_watcher_activity()
+        self.assertFalse(mock_watcher.is_paused())
+
+    def test_watcher_periodic_countdown_refresh_when_visible(self):
+        """Verifies that watcher polls and refreshes sliding window countdowns every 30s when visible."""
+        from unittest.mock import patch
+        import time
+        import threading
+        from core.watcher import SessionWatcher
+        watcher = SessionWatcher.__new__(SessionWatcher)
+        watcher._paused = False
+        watcher._poll_lock = threading.Lock()
+        watcher._lock = threading.Lock()
+        watcher._selected_session_id = None
+        watcher._mode_all = False
+        watcher._last_sessions_fingerprint = ()
+        watcher._last_brain_mtimes = {}
+        watcher._last_realtime_mtimes = {}
+        watcher._last_full_scan_time = time.time()
+        watcher._last_report_time = time.time() - 35.0  # 35s ago (>30s due)
+        watcher.latest_account_report = {"some": "data"}
+        watcher.latest_sessions = [{"session_id": "test_sid", "file": "dummy", "mtime": 100.0, "size": 10}]
+        watcher.on_update_callback = None
+
+        with patch("core.watcher.get_all_session_files", return_value=watcher.latest_sessions), \
+             patch("core.watcher.parse_transcript_file_cached", return_value=({"prompt": 1, "thinking": 1, "candidates": 1}, [], "test")), \
+             patch("core.session_finder.find_all_brain_dirs", return_value=[]), \
+             patch("core.account_manager.has_auth_credentials_changed", return_value=False):
+            watcher._poll(force=False)
+            self.assertAlmostEqual(watcher._last_report_time, time.time(), delta=2.0)
+
 
 if __name__ == "__main__":
     unittest.main()
