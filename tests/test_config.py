@@ -137,6 +137,41 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(DEFAULT_ACTIVE_SESSIONS_ONLY_5H)
         self.assertFalse(DEFAULT_ACTIVE_SESSIONS_ONLY_7D)
 
+    def test_config_atomic_save_and_reload(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_file = Path(tmpdir) / "config.json"
+            cm = ConfigManager()
+            cm.config_path = cfg_file
+            cm.set("theme", "light", save_now=True)
+            self.assertTrue(cfg_file.exists())
+
+            # Reload with fresh instance
+            cm2 = ConfigManager()
+            cm2.config_path = cfg_file
+            cm2.load()
+            self.assertEqual(cm2.get("theme"), "light")
+
+    def test_config_fallback_to_default_config(self):
+        cm = ConfigManager()
+        # Temporarily pop default key
+        cm.data.pop("limit_5h", None)
+        # Fallback to DEFAULT_CONFIG
+        self.assertEqual(cm.get("limit_5h"), DEFAULT_CONFIG["limit_5h"])
+        # Non-existent key with no default returns None
+        self.assertIsNone(cm.get("random_nonexistent_setting_key_xyz"))
+
+    def test_config_corrupted_json_resilience(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_file = Path(tmpdir) / "corrupt_config.json"
+            cfg_file.write_text("{this is not valid json at all", encoding="utf-8")
+
+            cm = ConfigManager()
+            cm.config_path = cfg_file
+            # load() handles JSONDecodeError gracefully
+            data = cm.load()
+            self.assertIsInstance(data, dict)
+            self.assertEqual(data.get("config_version"), 14)
+
 
 if __name__ == "__main__":
     unittest.main()

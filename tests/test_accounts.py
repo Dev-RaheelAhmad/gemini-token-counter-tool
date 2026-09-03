@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 import tempfile
 import json
@@ -11,13 +12,28 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+from unittest.mock import patch
+import base64
+
 from core.account_manager import (
     is_valid_account_email,
     get_all_known_accounts_list,
     get_auth_files_fingerprint,
     get_active_google_account,
+    set_active_google_account_in_memory,
     get_account_activity_ranges,
     find_best_matching_account,
+    has_auth_credentials_changed,
+    decode_id_token_email,
+    get_all_google_accounts,
+    clear_credential_cache,
+)
+from core.realtime_quota import (
+    format_time_until_reset,
+    parse_account_quota_file,
+    get_account_realtime_quota,
+    load_all_realtime_quotas,
+    clear_realtime_quota_cache,
 )
 
 
@@ -73,6 +89,125 @@ class TestAccountManager(unittest.TestCase):
         # With valid mtime
         matched_valid = find_best_matching_account(1787696300.0, fallback_account="fallback@example.com")
         self.assertTrue(is_valid_account_email(matched_valid) or matched_valid == "fallback@example.com")
+
+    def test_find_best_matching_account_synthetic(self):
+        fake_ranges = [
+            {
+                "email": "primary.developer@company.org",
+                "created_at": 10000.0,
+                "last_used": 20000.0,
+                "last_updated": 20000.0,
+            }
+        ]
+        with patch("core.account_manager.get_account_activity_ranges", return_value=fake_ranges):
+            # 1. Inside window [10000 - 1800, 20000 + 1800] = [8200, 21800]
+            matched_inside = find_best_matching_account(15000.0, fallback_account="fallback@company.org")
+            self.assertEqual(matched_inside, "primary.developer@company.org")
+
+            # 2. Proximity window within 48h (172800s) of last_used (e.g. 50000.0)
+            matched_prox = find_best_matching_account(50000.0, fallback_account="fallback@company.org")
+            self.assertEqual(matched_prox, "primary.developer@company.org")
+
+            # 3. Far out of range (> 48h away, e.g. 500000.0) -> returns fallback
+            matched_far = find_best_matching_account(500000.0, fallback_account="fallback@company.org")
+            self.assertEqual(matched_far, "fallback@company.org")
+
+    def test_has_auth_credentials_changed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            f = Path(tmpdir) / "oauth_creds.json"
+            f.write_text('{"id_token": "token1"}\n', encoding="utf-8")
+
+            fake_files = {
+                "google_accounts": [],
+                "oauth_creds": [f],
+                "jetski_tokens": []
+            }
+
+            with patch("core.account_manager.find_credential_files", return_value=fake_files):
+                clear_credential_cache()
+                # 1. Initial check records fingerprint -> returns True (state established)
+                ch1 = has_auth_credentials_changed()
+                self.assertTrue(ch1)
+
+                # 2. Immediate second check without file modification -> returns False
+                ch2 = has_auth_credentials_changed()
+                self.assertFalse(ch2)
+
+                # 3. Modify file (write new content and update mtime)
+                time.sleep(0.05)
+                f.write_text('{"id_token": "token2_updated"}\n', encoding="utf-8")
+                ch3 = has_auth_credentials_changed()
+                self.assertTrue(ch3)
+
+                # 4. Immediate fourth check -> returns False
+                ch4 = has_auth_credentials_changed()
+                self.assertFalse(ch4)
+
+    def test_decode_id_token_email_malformed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 1. Non-existent file
+            non_exist = Path(tmpdir) / "does_not_exist.json"
+            self.assertIsNone(decode_id_token_email(non_exist))
+
+            # 2. JSON without id_token
+            f1 = Path(tmpdir) / "no_token.json"
+            f1.write_text('{"other": 123}', encoding="utf-8")
+            self.assertIsNone(decode_id_token_email(f1))
+
+            # 3. id_token with no dots
+            f2 = Path(tmpdir) / "no_dots.json"
+            f2.write_text('{"id_token": "nodotsinthisstring"}', encoding="utf-8")
+            self.assertIsNone(decode_id_token_email(f2))
+
+            # 4. Corrupted base64 payload
+            f3 = Path(tmpdir) / "bad_b64.json"
+            f3.write_text('{"id_token": "header.!!!invalid_base64!!!.sig"}', encoding="utf-8")
+            self.assertIsNone(decode_id_token_email(f3))
+
+            # 5. Non-JSON decoded payload
+            bad_payload = base64.urlsafe_b64encode(b"not json at all").decode("utf-8").rstrip("=")
+            f4 = Path(tmpdir) / "non_json_payload.json"
+            f4.write_text(f'{{"id_token": "header.{bad_payload}.sig"}}', encoding="utf-8")
+            self.assertIsNone(decode_id_token_email(f4))
+
+            # 6. JSON payload missing email field
+            no_email_payload = base64.urlsafe_b64encode(b'{"name": "No Email"}').decode("utf-8").rstrip("=")
+            f5 = Path(tmpdir) / "no_email_field.json"
+            f5.write_text(f'{{"id_token": "header.{no_email_payload}.sig"}}', encoding="utf-8")
+            self.assertIsNone(decode_id_token_email(f5))
+
+    def test_get_all_google_accounts_parsing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ga_file = Path(tmpdir) / "google_accounts.json"
+            ga_data = {
+                "active": "active.user@company.org",
+                "old": [
+                    "historical.one@company.org",
+                    {"email": "historical.two@company.org"},
+                    "mock@test.com",  # Should be filtered out by is_valid_account_email
+                    "invalid_string"
+                ]
+            }
+            ga_file.write_text(json.dumps(ga_data), encoding="utf-8")
+
+            fake_files = {
+                "google_accounts": [ga_file],
+                "oauth_creds": [],
+                "jetski_tokens": []
+            }
+            try:
+                set_active_google_account_in_memory("active.user@company.org")
+                with patch("core.account_manager.find_credential_files", return_value=fake_files):
+                    clear_credential_cache()
+                    res = get_all_google_accounts()
+                    self.assertEqual(res["active_account"], "active.user@company.org")
+                    self.assertTrue(res["has_active"])
+                    self.assertIn("historical.one@company.org", res["old_accounts"])
+                    self.assertIn("historical.two@company.org", res["old_accounts"])
+                    self.assertNotIn("mock@test.com", res["old_accounts"])
+                    self.assertNotIn("invalid_string", res["old_accounts"])
+            finally:
+                set_active_google_account_in_memory(None)
 
 
 class TestRealtimeQuota(unittest.TestCase):
@@ -172,6 +307,107 @@ class TestRealtimeQuota(unittest.TestCase):
         self.assertEqual(rep["pct_7d_remaining"], 92.0)
         self.assertIn("in 2h 30m", rep["reset_5h_str"])
         self.assertIn("in 6d 00h", rep["reset_7d_str"])
+
+    def test_get_account_realtime_quota(self):
+        fake_quotas = {
+            "developer@company.org": {
+                "email": "developer@company.org",
+                "gemini_5h": {"pct_remaining": 95.0},
+            }
+        }
+        with patch("core.realtime_quota.load_all_realtime_quotas", return_value=fake_quotas):
+            # 1. Exact match
+            q_exact = get_account_realtime_quota("developer@company.org")
+            self.assertIsNotNone(q_exact)
+            self.assertEqual(q_exact["email"], "developer@company.org")
+
+            # 2. Case insensitive match
+            q_case = get_account_realtime_quota("DEVELOPER@COMPANY.ORG")
+            self.assertIsNotNone(q_case)
+
+            # 3. Username prefix match
+            q_prefix = get_account_realtime_quota("developer")
+            self.assertIsNotNone(q_prefix)
+
+            # 4. Non-matching email returns None
+            self.assertIsNone(get_account_realtime_quota("other@company.org"))
+
+            # 5. Empty or None returns None
+            self.assertIsNone(get_account_realtime_quota(""))
+            self.assertIsNone(get_account_realtime_quota(None))
+
+    def test_load_all_realtime_quotas_and_cache(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            acc_dir = Path(tmpdir) / "accounts"
+            acc_dir.mkdir()
+
+            # Account 1: email in root
+            acc1 = acc_dir / "acc1.json"
+            acc1.write_text(json.dumps({
+                "email": "primary@company.org",
+                "quota": {"quota_groups": []}
+            }), encoding="utf-8")
+
+            # Account 2: email in token block
+            acc2 = acc_dir / "acc2.json"
+            acc2.write_text(json.dumps({
+                "token": {"email": "secondary@company.org"},
+                "quota": {"quota_groups": []}
+            }), encoding="utf-8")
+
+            # Account 3: malformed JSON (should be skipped gracefully)
+            acc3 = acc_dir / "corrupt.json"
+            acc3.write_text("{malformed: json", encoding="utf-8")
+
+            with patch("core.realtime_quota.get_realtime_accounts_dirs", return_value=[acc_dir]):
+                clear_realtime_quota_cache()
+                # Initial load
+                quotas = load_all_realtime_quotas(force_refresh=True)
+                self.assertIn("primary@company.org", quotas)
+                self.assertIn("secondary@company.org", quotas)
+                self.assertEqual(len(quotas), 2)
+
+                # Cached load without force_refresh
+                cached = load_all_realtime_quotas(force_refresh=False)
+                self.assertEqual(len(cached), 2)
+
+                clear_realtime_quota_cache()
+
+    def test_parse_account_quota_file_third_party_and_clamping(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            f = Path(tmpdir) / "third_party.json"
+            data = {
+                "email": "engineer@company.org",
+                "quota": {
+                    "quota_groups": [
+                        {
+                            "display_name": "Claude and GPT Models",
+                            "buckets": [
+                                {
+                                    "bucket_id": "claude-5h",
+                                    "window": "5h",
+                                    "remaining_fraction": 1.5,  # Exceeds 1.0 -> should clamp to 100.0
+                                    "reset_time": "2026-09-01T12:00:00Z"
+                                },
+                                {
+                                    "bucket_id": "claude-weekly",
+                                    "window": "weekly",
+                                    "remaining_fraction": -0.2,  # Negative -> should clamp to 0.0
+                                    "reset_time": "2026-09-07T12:00:00Z"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+            f.write_text(json.dumps(data), encoding="utf-8")
+
+            parsed = parse_account_quota_file(f)
+            self.assertIsNotNone(parsed)
+            self.assertEqual(parsed["third_party_5h"]["pct_remaining"], 100.0)
+            self.assertEqual(parsed["third_party_weekly"]["pct_remaining"], 0.0)
+            self.assertEqual(parsed["third_party_5h"]["reset_time"], "2026-09-01T12:00:00Z")
+            self.assertEqual(parsed["third_party_weekly"]["reset_time"], "2026-09-07T12:00:00Z")
 
 
 if __name__ == "__main__":

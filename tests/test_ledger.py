@@ -252,6 +252,52 @@ class TestLedger(unittest.TestCase):
             self.assertFalse(rep_b["active_only_5h"])
             self.assertTrue(rep_b["active_only_7d"])
 
+    def test_ledger_summary_and_bulk_operations(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_ledger = AccountLedger()
+            test_ledger.ledger_file = Path(temp_dir) / "test_usage.json"
+            test_ledger.sessions.clear()
+            now = datetime.now(timezone.utc)
+
+            # Add 3 sessions across 2 accounts
+            test_ledger.update_session(
+                session_id="bulk_1",
+                account_email="alpha@example.com",
+                stats={"prompt": 200, "thinking": 100, "candidates": 200},
+                line_records=[(now, 200, 100, 200)]
+            )
+            test_ledger.update_session(
+                session_id="bulk_2",
+                account_email="beta@example.com",
+                stats={"prompt": 100, "thinking": 50, "candidates": 150},
+                line_records=[(now, 100, 50, 150)]
+            )
+            test_ledger.update_session(
+                session_id="bulk_3",
+                account_email="alpha@example.com",
+                stats={"prompt": 50, "thinking": 25, "candidates": 25},
+                line_records=[(now, 50, 25, 25)]
+            )
+
+            # 1. Test get_summary()
+            summary = test_ledger.get_summary()
+            self.assertEqual(summary["tracked_sessions"], 3)
+            self.assertEqual(summary["total_tokens"], 900)
+            self.assertIn("alpha@example.com", summary["accounts_tracked"])
+            self.assertIn("beta@example.com", summary["accounts_tracked"])
+
+            # 2. Test remove_sessions (batch deletion)
+            test_ledger.remove_sessions(["bulk_1", "bulk_2"])
+            self.assertNotIn("bulk_1", test_ledger.sessions)
+            self.assertNotIn("bulk_2", test_ledger.sessions)
+            self.assertIn("bulk_3", test_ledger.sessions)
+            self.assertEqual(len(test_ledger.sessions), 1)
+
+            # 3. Test clear_all()
+            test_ledger.clear_all()
+            self.assertEqual(len(test_ledger.sessions), 0)
+            self.assertTrue(test_ledger._is_dirty)
+
 
 class TestAppendOnlyLedgerAndMultiAccountIsolation(unittest.TestCase):
     def setUp(self):
