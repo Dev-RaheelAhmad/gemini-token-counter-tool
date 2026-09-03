@@ -12,7 +12,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from core.ledger import AccountLedger, ledger
+from core.ledger import AccountLedger, ledger, compact_time_series_records
 from core.account_manager import set_active_google_account_in_memory
 from core.engine import get_session_user_report
 
@@ -490,6 +490,169 @@ class TestAppendOnlyLedgerAndMultiAccountIsolation(unittest.TestCase):
         self.assertEqual(rep["candidates"], 800)
         self.assertEqual(rep["tokens_5h"], 1500)
         self.assertGreater(len(rep["records"]), 0)
+
+
+class TestLedgerCompaction(unittest.TestCase):
+    """Unit tests for Granular Timestamp Compaction verifying zero schema changes and token invariance."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.ledger_file = Path(self.tmp_dir) / "test_compaction_usage.json"
+        self.ledger_log = Path(self.tmp_dir) / "test_compaction_log.jsonl"
+        self.ledger = AccountLedger(ledger_file=self.ledger_file, ledger_log_file=self.ledger_log)
+        self.ledger.sessions.clear()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_compact_time_series_records_preserves_recent(self):
+        now = datetime.now(timezone.utc)
+        recent_records = [
+            (now - timedelta(days=2, hours=1), 100, 50, 25),
+            (now - timedelta(days=2, hours=2), 200, 75, 50),
+            (now - timedelta(days=1), 300, 100, 75),
+        ]
+        compacted = compact_time_series_records(recent_records, older_than_days=30)
+        self.assertEqual(len(compacted), 3)
+        self.assertEqual(compacted, recent_records)
+
+    def test_compact_time_series_records_consolidates_old_by_day(self):
+        now = datetime.now(timezone.utc)
+        day40_1 = now - timedelta(days=40, hours=1)
+        day40_2 = now - timedelta(days=40, hours=2)
+        day40_3 = now - timedelta(days=40, hours=3)
+        day40_4 = now - timedelta(days=40, hours=4)
+        day41_1 = now - timedelta(days=41, hours=1)
+        day41_2 = now - timedelta(days=41, hours=2)
+        today_rec = now - timedelta(hours=1)
+
+        input_records = [
+            (day41_2, 10, 5, 2),
+            (day41_1, 20, 10, 4),
+            (day40_4, 30, 15, 6),
+            (day40_3, 40, 20, 8),
+            (day40_2, 50, 25, 10),
+            (day40_1, 60, 30, 12),
+            (today_rec, 100, 50, 20),
+        ]
+        orig_p = sum(r[1] for r in input_records)
+        orig_th = sum(r[2] for r in input_records)
+        orig_c = sum(r[3] for r in input_records)
+        orig_tot = orig_p + orig_th + orig_c
+
+        compacted = compact_time_series_records(input_records, older_than_days=30)
+        # Should consolidate into 1 record for day 41, 1 record for day 40, and 1 record for today = 3 total
+        self.assertEqual(len(compacted), 3)
+
+        # Invariance check: sums must be 100% equal
+        self.assertEqual(sum(r[1] for r in compacted), orig_p)
+        self.assertEqual(sum(r[2] for r in compacted), orig_th)
+        self.assertEqual(sum(r[3] for r in compacted), orig_c)
+        self.assertEqual(sum(r[1] + r[2] + r[3] for r in compacted), orig_tot)
+
+        # Format invariance check: elements are 4-tuples with datetime
+        for item in compacted:
+            self.assertIsInstance(item, tuple)
+            self.assertEqual(len(item), 4)
+            self.assertIsInstance(item[0], datetime)
+
+    def test_compact_session_records_updates_ledger_and_account_usage(self):
+        now = datetime.now(timezone.utc)
+        old_day = now - timedelta(days=45)
+        recs = [
+            (old_day + timedelta(minutes=10), 100, 20, 30),
+            (old_day + timedelta(minutes=20), 200, 40, 60),
+            (old_day + timedelta(minutes=30), 300, 60, 90),
+        ]
+        self.ledger.update_session(
+            session_id="compact_test_session_001",
+            account_email="developer@company.org",
+            stats={"prompt": 600, "thinking": 120, "candidates": 180},
+            line_records=recs,
+            first_prompt="Compaction unit test prompt"
+        )
+        sess = self.ledger.sessions["compact_test_session_001"]
+        self.assertEqual(len(sess["records"]), 3)
+        self.assertEqual(len(sess["account_usage"]["developer@company.org"]["records"]), 3)
+
+        # Run compaction
+        compacted_count = self.ledger.compact_session_records(older_than_days=30)
+        self.assertEqual(compacted_count, 1)
+
+        # Verify key invariance: key names have NOT changed
+        self.assertIn("records", sess)
+        self.assertIn("records", sess["account_usage"]["developer@company.org"])
+        self.assertNotIn("compacted_records", sess)
+
+        # Records are collapsed from 3 to 1
+        self.assertEqual(len(sess["records"]), 1)
+        self.assertEqual(len(sess["account_usage"]["developer@company.org"]["records"]), 1)
+
+        # Mathematical invariance
+        self.assertEqual(sess["records"][0][1], 600)
+        self.assertEqual(sess["records"][0][2], 120)
+        self.assertEqual(sess["records"][0][3], 180)
+        self.assertEqual(sess["total"], 900)
+
+    def test_analytics_and_window_compatibility_with_compacted_data(self):
+        from core.analytics import bucket_records_by_time
+        from core.engine import calculate_window_tracker
+        now = datetime.now(timezone.utc)
+
+        recs = [
+            (now - timedelta(days=60, hours=1), 500, 100, 200),
+            (now - timedelta(days=60, hours=2), 500, 100, 200),
+            (now - timedelta(hours=2), 50, 10, 20),
+        ]
+        uncompacted_buckets = bucket_records_by_time(recs, timeframe="month", ref_time=now)
+        uncompacted_window = calculate_window_tracker(recs, ref_time=now)
+
+        compacted = compact_time_series_records(recs, older_than_days=30)
+        compacted_buckets = bucket_records_by_time(compacted, timeframe="month", ref_time=now)
+        compacted_window = calculate_window_tracker(compacted, ref_time=now)
+
+        # 5-hour and 7-day rate-limit tokens must match exactly
+        self.assertEqual(uncompacted_window["tokens_5h"], compacted_window["tokens_5h"])
+        self.assertEqual(uncompacted_window["tokens_7d"], compacted_window["tokens_7d"])
+
+        # Monthly analytics bucket totals must match exactly
+        uncompacted_month_sum = sum(b.get("total", 0) for b in uncompacted_buckets)
+        compacted_month_sum = sum(b.get("total", 0) for b in compacted_buckets)
+        self.assertEqual(uncompacted_month_sum, compacted_month_sum)
+
+    def test_disk_roundtrip_preserves_compacted_state(self):
+        now = datetime.now(timezone.utc)
+        old_day = now - timedelta(days=50)
+        recs = [
+            (old_day + timedelta(minutes=5), 100, 50, 25),
+            (old_day + timedelta(minutes=15), 200, 100, 50),
+        ]
+        self.ledger.update_session(
+            session_id="roundtrip_sess_001",
+            account_email="roundtrip.user@example.com",
+            stats={"prompt": 300, "thinking": 150, "candidates": 75},
+            line_records=recs
+        )
+        self.ledger.flush_to_disk(force=True)
+
+        # Verify disk JSON content contains compacted records (1 item instead of 2)
+        raw_json = json.loads(self.ledger_file.read_text(encoding="utf-8"))
+        sess_json = raw_json["sessions"]["roundtrip_sess_001"]
+        self.assertEqual(len(sess_json["records"]), 1)
+        self.assertEqual(sess_json["records"][0][1], 300)
+
+        # Load fresh ledger
+        fresh = AccountLedger(ledger_file=self.ledger_file, ledger_log_file=self.ledger_log)
+        fresh.sessions.clear()
+        fresh.load_from_disk()
+
+        self.assertIn("roundtrip_sess_001", fresh.sessions)
+        loaded_sess = fresh.sessions["roundtrip_sess_001"]
+        self.assertEqual(len(loaded_sess["records"]), 1)
+        self.assertEqual(loaded_sess["total"], 525)
+        self.assertEqual(loaded_sess["records"][0][1], 300)
+        self.assertEqual(loaded_sess["records"][0][2], 150)
+        self.assertEqual(loaded_sess["records"][0][3], 75)
 
 
 if __name__ == "__main__":

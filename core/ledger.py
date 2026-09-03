@@ -1,7 +1,7 @@
 import json
 import threading
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 
 from core.config import get_config_dir
@@ -57,6 +57,98 @@ def paginate_items(items: list, page: int = 1, page_size: int = 10) -> Dict[str,
         "start_idx": start_idx,
         "end_idx": end_idx,
     }
+
+
+def compact_time_series_records(
+    records: List[Tuple[Optional[datetime], int, int, int]],
+    cutoff_dt: Optional[datetime] = None,
+    older_than_days: int = 30
+) -> List[Tuple[Optional[datetime], int, int, int]]:
+    """
+    Compacts granular (datetime, prompt, thinking, candidates) records:
+      - Records newer than cutoff (or within older_than_days): kept at 100% per-turn granularity.
+      - Records older than cutoff: grouped by calendar day (UTC) and consolidated into
+        a single record per day with the day's total tokens.
+
+    Zero Schema / Key Change:
+      Output format is strictly identical: List[Tuple[Optional[datetime], int, int, int]].
+      Sum of (prompt, thinking, candidates) is 100% mathematically invariant.
+    """
+    if not records:
+        return []
+
+    if cutoff_dt is None:
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+    elif cutoff_dt.tzinfo is None:
+        cutoff_dt = cutoff_dt.replace(tzinfo=timezone.utc)
+
+    recent_records: List[Tuple[Optional[datetime], int, int, int]] = []
+    older_by_day: Dict[str, List[Any]] = {}
+    has_older = False
+
+    for item in records:
+        if not isinstance(item, (tuple, list)) or len(item) < 4:
+            continue
+        dt_val = item[0]
+        p = int(item[1])
+        th = int(item[2])
+        c = int(item[3])
+
+        if dt_val is None:
+            recent_records.append((None, p, th, c))
+            continue
+
+        if isinstance(dt_val, str):
+            dt_parsed = parse_iso_time(dt_val)
+        elif isinstance(dt_val, datetime):
+            dt_parsed = dt_val
+        else:
+            dt_parsed = None
+
+        if dt_parsed is None:
+            recent_records.append((None, p, th, c))
+            continue
+
+        if dt_parsed.tzinfo is None:
+            dt_utc = dt_parsed.replace(tzinfo=timezone.utc)
+        else:
+            dt_utc = dt_parsed.astimezone(timezone.utc)
+
+        if dt_utc >= cutoff_dt:
+            recent_records.append((dt_parsed, p, th, c))
+        else:
+            has_older = True
+            day_str = dt_utc.strftime("%Y-%m-%d")
+            if day_str not in older_by_day:
+                older_by_day[day_str] = [dt_parsed, p, th, c]
+            else:
+                cur_latest = older_by_day[day_str][0]
+                cur_latest_utc = cur_latest.astimezone(timezone.utc) if cur_latest.tzinfo else cur_latest.replace(tzinfo=timezone.utc)
+                if dt_utc > cur_latest_utc:
+                    older_by_day[day_str][0] = dt_parsed
+                older_by_day[day_str][1] += p
+                older_by_day[day_str][2] += th
+                older_by_day[day_str][3] += c
+
+    if not has_older or (len(older_by_day) + len(recent_records) == len(records)):
+        return records
+
+    compacted_older: List[Tuple[Optional[datetime], int, int, int]] = []
+    for day_str in sorted(older_by_day.keys()):
+        day_info = older_by_day[day_str]
+        compacted_older.append((day_info[0], day_info[1], day_info[2], day_info[3]))
+
+    def _sort_key(r):
+        dt = r[0]
+        if dt is None:
+            return (1, datetime.max.replace(tzinfo=timezone.utc))
+        if dt.tzinfo is None:
+            return (0, dt.replace(tzinfo=timezone.utc))
+        return (0, dt.astimezone(timezone.utc))
+
+    result = compacted_older + recent_records
+    result.sort(key=_sort_key)
+    return result
 
 
 def get_ledger_file() -> Path:
@@ -135,6 +227,39 @@ class AccountLedger:
                 self._is_dirty = True
                 self.flush_to_disk(force=True)
             return len(to_remove)
+
+    def compact_session_records(self, older_than_days: int = 30, cutoff_dt: Optional[datetime] = None) -> int:
+        """
+        Compacts time-series records for all historical sessions older than `older_than_days`.
+        Consolidates multi-step interaction turns by calendar day without changing dictionary keys,
+        tuple formats, or token sums.
+        Returns the number of sessions compacted.
+        """
+        with self._lock:
+            if cutoff_dt is None:
+                cutoff_dt = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+            elif cutoff_dt.tzinfo is None:
+                cutoff_dt = cutoff_dt.replace(tzinfo=timezone.utc)
+
+            compacted_count = 0
+            for sid, s in self.sessions.items():
+                records = s.get("records", [])
+                if not records:
+                    continue
+
+                orig_len = len(records)
+                compacted_records = compact_time_series_records(records, cutoff_dt=cutoff_dt)
+                if len(compacted_records) < orig_len:
+                    s["records"] = compacted_records
+                    acc_usage = s.get("account_usage", {})
+                    if isinstance(acc_usage, dict):
+                        for u_act, udata in acc_usage.items():
+                            if isinstance(udata, dict) and "records" in udata and udata["records"]:
+                                udata["records"] = compact_time_series_records(udata["records"], cutoff_dt=cutoff_dt)
+                    compacted_count += 1
+                    self._is_dirty = True
+
+            return compacted_count
 
     def load_from_disk(self):
         """Loads persisted ledger from account_usage.json/account_ledger.jsonl, bootstrapping if needed."""
@@ -256,7 +381,8 @@ class AccountLedger:
                     except Exception:
                         pass
 
-                if cleaned_any or self._is_dirty:
+                compacted_any = self.compact_session_records(older_than_days=30) > 0
+                if cleaned_any or compacted_any or self._is_dirty:
                     self._is_dirty = True
                     self.flush_to_disk(force=True)
 
@@ -325,6 +451,8 @@ class AccountLedger:
         with self._lock:
             if not self._is_dirty and not force:
                 return
+            # Compact historical records older than 30 days before serializing snapshot
+            self.compact_session_records(older_than_days=30)
             # Fast shallow-copy snapshot of session metadata (<0.1ms lock holding duration)
             sessions_snapshot = {sid: dict(sinfo) for sid, sinfo in self.sessions.items()}
             rt_quotas_snapshot = dict(self.realtime_quotas)
