@@ -15,6 +15,8 @@ class QuotaGauge(ctk.CTkFrame):
         title: str,
         icon: str,
         default_limit: int = 1000000,
+        active_color: Optional[tuple] = None,
+        all_color: Optional[tuple] = None,
         **kwargs
     ):
         super().__init__(
@@ -26,6 +28,8 @@ class QuotaGauge(ctk.CTkFrame):
             **kwargs
         )
         self.limit = default_limit
+        self.active_color = active_color if active_color is not None else ("#1d4ed8", "#38bdf8")
+        self.all_color = all_color if all_color is not None else ("#1d4ed8", "#38bdf8")
 
         # Top Content Frame
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -65,7 +69,7 @@ class QuotaGauge(ctk.CTkFrame):
             self.num_active_frame,
             text="⚡",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=("#1d4ed8", "#38bdf8")
+            text_color=self.active_color
         )
         self.lbl_big_active_icon.pack(side="left", padx=(0, 4))
 
@@ -93,7 +97,7 @@ class QuotaGauge(ctk.CTkFrame):
             self.num_all_frame,
             text="★",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=("#7c3aed", "#a78bfa")
+            text_color=self.all_color
         )
         self.lbl_big_all_icon.pack(side="left", padx=(0, 4))
 
@@ -125,7 +129,7 @@ class QuotaGauge(ctk.CTkFrame):
             self.row_active,
             text="⚡ Active:",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=("#1d4ed8", "#38bdf8"),
+            text_color=self.active_color,
             width=64,
             anchor="w"
         )
@@ -154,7 +158,7 @@ class QuotaGauge(ctk.CTkFrame):
             self.row_all,
             text="★ All:   ",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=("#1d4ed8", "#38bdf8"),
+            text_color=self.all_color,
             width=64,
             anchor="w"
         )
@@ -285,6 +289,7 @@ class QuotaGauge(ctk.CTkFrame):
                 fg_color=badge_bg,
                 text_color=badge_txt
             )
+            self.lbl_big_all_val.configure(text_color=badge_txt)
             self.progress_bar.configure(progress_color=bar_color)
             self.progress_bar.set(ratio)
         else:
@@ -322,6 +327,7 @@ class QuotaGauge(ctk.CTkFrame):
                     text_color=("#15803d", "#10B981")
                 )
 
+            self.lbl_big_all_val.configure(text_color=badge_txt)
             self.progress_bar.configure(progress_color=bar_color)
             self.progress_bar.set(ratio)
 

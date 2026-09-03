@@ -638,7 +638,9 @@ class GeminiTokenCounterApp(ctk.CTk):
             self.quota_frame,
             title="5-Hour Limit",
             icon="⏳",
-            default_limit=limit_5h
+            default_limit=limit_5h,
+            active_color=("#1d4ed8", "#38bdf8"),
+            all_color=("#1d4ed8", "#38bdf8")
         )
         self.gauge_5h.grid(row=0, column=0, padx=(0, 4), sticky="nsew")
 
@@ -647,7 +649,9 @@ class GeminiTokenCounterApp(ctk.CTk):
             self.quota_frame,
             title="7-Day Limit",
             icon="📅",
-            default_limit=limit_7d
+            default_limit=limit_7d,
+            active_color=("#7c3aed", "#a78bfa"),
+            all_color=("#7c3aed", "#a78bfa")
         )
         self.gauge_7d.grid(row=0, column=1, padx=(4, 0), sticky="nsew")
         self._quota_layout_mode = "2col"

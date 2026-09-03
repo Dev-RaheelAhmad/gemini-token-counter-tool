@@ -750,11 +750,19 @@ class MiniHUD(ctk.CTkToplevel):
         sep1.pack(fill="x", padx=6, pady=3)
 
         # 5-Hour Section
+        is_rt = all_rep.get("is_realtime_quota", False)
+        if pct_5h_rem >= 60.0 or (pct_5h_rem == 0.0 and is_rt):
+            col_5h_all = ("#15803d", "#10B981")
+        elif pct_5h_rem >= 20.0:
+            col_5h_all = ("#b45309", "#F59E0B")
+        else:
+            col_5h_all = ("#b91c1c", "#EF4444")
+
         h5_hdr = ctk.CTkLabel(
             container,
             text=f"⏳ 5-HOUR WINDOW ({pct_5h_rem:.1f}% rem • 🔄 {short_reset_5h})",
             font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=("#1e293b", "#e2e8f0"),
+            text_color=col_5h_all,
             anchor="w",
             justify="left"
         )
@@ -774,7 +782,7 @@ class MiniHUD(ctk.CTkToplevel):
             container,
             text=f"  ★ All:    {used_5h_all:,} tok  (📥 {_fmt(prompt_5h_all)} • 🧠 {_fmt(think_5h_all)} • 📤 {_fmt(cand_5h_all)})",
             font=ctk.CTkFont(size=11),
-            text_color=("#2563eb", "#93c5fd"),
+            text_color=col_5h_all,
             anchor="w",
             justify="left"
         )
@@ -785,11 +793,18 @@ class MiniHUD(ctk.CTkToplevel):
         sep2.pack(fill="x", padx=6, pady=3)
 
         # 7-Day Section
+        if pct_7d_rem >= 60.0 or (pct_7d_rem == 0.0 and is_rt):
+            col_7d_all = ("#15803d", "#10B981")
+        elif pct_7d_rem >= 20.0:
+            col_7d_all = ("#b45309", "#F59E0B")
+        else:
+            col_7d_all = ("#b91c1c", "#EF4444")
+
         d7_hdr = ctk.CTkLabel(
             container,
             text=f"📅 7-DAY WINDOW ({pct_7d_rem:.1f}% rem • 🔄 {short_reset_7d})",
             font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=("#1e293b", "#e2e8f0"),
+            text_color=col_7d_all,
             anchor="w",
             justify="left"
         )
@@ -809,7 +824,7 @@ class MiniHUD(ctk.CTkToplevel):
             container,
             text=f"  ★ All:    {used_7d_all:,} tok  (📥 {_fmt(prompt_7d_all)} • 🧠 {_fmt(think_7d_all)} • 📤 {_fmt(cand_7d_all)})",
             font=ctk.CTkFont(size=11),
-            text_color=("#9333ea", "#d8b4fe"),
+            text_color=col_7d_all,
             anchor="w",
             justify="left"
         )
@@ -1609,7 +1624,7 @@ class MiniHUD(ctk.CTkToplevel):
                 self.card_7d,
                 text="⚡ Active: 0 tok",
                 font=ctk.CTkFont(size=13, weight="bold"),
-                text_color=("#1d4ed8", "#60a5fa")
+                text_color=("#7c3aed", "#c084fc")
             )
             self.h7_active_lbl.pack(anchor="w", padx=8, pady=(1, 0))
             self._bind_drag(self.h7_active_lbl)
@@ -1619,7 +1634,7 @@ class MiniHUD(ctk.CTkToplevel):
                 self.card_7d,
                 text="📥 0 • 🧠 0 • 📤 0",
                 font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=("#3b82f6", "#93c5fd")
+                text_color=("#9333ea", "#d8b4fe")
             )
             self.h7_active_breakdown_lbl.pack(anchor="w", padx=26, pady=(0, 2))
             self._bind_drag(self.h7_active_breakdown_lbl)
@@ -1760,8 +1775,6 @@ class MiniHUD(ctk.CTkToplevel):
                 self.h5_badge.configure(text=f"{pct_5h:.1f}% used", fg_color=b_bg, text_color=b_txt)
                 self.prog_5h.configure(progress_color=bar_col)
                 self.prog_5h.set(ratio_5h)
-                if hasattr(self, "bubble_icon"):
-                    self.bubble_icon.configure(text_color=bar_col)
             else:
                 ratio_5h = min(1.0, max(0.0, pct_5h_rem / 100.0))
                 if pct_5h_rem >= 60.0 or pct_5h_rem == 0.0:
@@ -1774,8 +1787,9 @@ class MiniHUD(ctk.CTkToplevel):
                 self.h5_badge.configure(text=badge_text, fg_color=b_bg, text_color=b_txt)
                 self.prog_5h.configure(progress_color=bar_col)
                 self.prog_5h.set(ratio_5h)
-                if hasattr(self, "bubble_icon"):
-                    self.bubble_icon.configure(text_color=bar_col)
+
+            if hasattr(self, "h5_all_lbl"):
+                self.h5_all_lbl.configure(text_color=b_txt)
 
         # 2. Update 7d Section (if expanded)
         if self.show_7d_expanded and hasattr(self, "card_7d"):
@@ -1833,6 +1847,9 @@ class MiniHUD(ctk.CTkToplevel):
                 self.prog_7d.configure(progress_color=bar_col)
                 self.prog_7d.set(ratio_7d)
 
+            if hasattr(self, "h7_all_lbl"):
+                self.h7_all_lbl.configure(text_color=b_txt)
+
         # 3. Update Floating Bubble Token Numbers & Remaining Quota %
         if hasattr(self, "bubble_5h_act_lbl"):
             used_5h_all_b = all_rep.get("tokens_5h", 0)
@@ -1843,9 +1860,6 @@ class MiniHUD(ctk.CTkToplevel):
             pct_7d_rem = float(all_rep.get("pct_7d_remaining", 0.0))
             is_rt = all_rep.get("is_realtime_quota", False)
 
-            self.bubble_5h_act_lbl.configure(text=f"{_fmt_bubble(used_5h_act_b)}")
-            self.bubble_5h_all_lbl.configure(text=f"{_fmt_bubble(used_5h_all_b)}")
-            
             p5_txt = f"{pct_5h_rem:.0f}%" if pct_5h_rem > 0 else ("100%" if is_rt else "0%")
             if pct_5h_rem >= 60.0 or (pct_5h_rem == 0.0 and is_rt):
                 c5 = ("#059669", "#34d399")
@@ -1853,12 +1867,12 @@ class MiniHUD(ctk.CTkToplevel):
                 c5 = ("#d97706", "#fbbf24")
             else:
                 c5 = ("#dc2626", "#f87171")
+
+            self.bubble_5h_act_lbl.configure(text=f"{_fmt_bubble(used_5h_act_b)}", text_color=("#1d4ed8", "#60a5fa"))
+            self.bubble_5h_all_lbl.configure(text=f"{_fmt_bubble(used_5h_all_b)}", text_color=c5)
             if hasattr(self, "bubble_5h_pct_lbl"):
                 self.bubble_5h_pct_lbl.configure(text=p5_txt, text_color=c5)
 
-            self.bubble_7d_act_lbl.configure(text=f"{_fmt_bubble(used_7d_act_b)}")
-            self.bubble_7d_all_lbl.configure(text=f"{_fmt_bubble(used_7d_all_b)}")
-            
             p7_txt = f"{pct_7d_rem:.0f}%" if pct_7d_rem > 0 else ("100%" if is_rt else "0%")
             if pct_7d_rem >= 60.0 or (pct_7d_rem == 0.0 and is_rt):
                 c7 = ("#059669", "#34d399")
@@ -1866,6 +1880,9 @@ class MiniHUD(ctk.CTkToplevel):
                 c7 = ("#d97706", "#fbbf24")
             else:
                 c7 = ("#dc2626", "#f87171")
+
+            self.bubble_7d_act_lbl.configure(text=f"{_fmt_bubble(used_7d_act_b)}", text_color=("#7c3aed", "#c084fc"))
+            self.bubble_7d_all_lbl.configure(text=f"{_fmt_bubble(used_7d_all_b)}", text_color=c7)
             if hasattr(self, "bubble_7d_pct_lbl"):
                 self.bubble_7d_pct_lbl.configure(text=p7_txt, text_color=c7)
 

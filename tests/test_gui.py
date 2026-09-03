@@ -278,10 +278,10 @@ class TestGUIComponents(unittest.TestCase):
                 "burn_rate_str": "Idle"
             })
             self.assertIn("123,456", hud.h5_all_lbl.cget("text"))
-            self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#475569", "#94a3b8"))
+            self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#15803d", "#10B981"))
             if hasattr(hud, "h7_all_lbl"):
                 self.assertIn("711,545", hud.h7_all_lbl.cget("text"))
-                self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#475569", "#94a3b8"))
+                self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#15803d", "#10B981"))
             # Sub-breakdown in 5h line: Input first, thinking middle, output last
             h5_breakdown = hud.h5_all_breakdown_lbl.cget("text")
             self.assertIn("10,000", h5_breakdown)
@@ -1654,6 +1654,114 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
         hud._recalculate_geometry()
         # Because target_geo matches _last_applied_geometry ("350x200+100+100"), geometry() should NOT be called
         self.assertEqual(len(geom_called), 0)
+
+    def test_quota_aware_token_colors(self):
+        """Verifies that All Tokens text colors dynamically follow 5H and 7D quota remaining logic,
+        while Active Tokens text colors follow the Blue 5H and Purple 7D themes."""
+        import customtkinter as ctk
+        from gui.components.quota_gauge import QuotaGauge
+        from gui.mini_hud import MiniHUD
+
+        root = ctk.CTk()
+        root.withdraw()
+        try:
+            # 1. Test QuotaGauge colors
+            gauge_5h = QuotaGauge(root, title="5-Hour Limit", icon="⏳", default_limit=1000000, active_color=("#1d4ed8", "#38bdf8"), all_color=("#1d4ed8", "#38bdf8"))
+            gauge_7d = QuotaGauge(root, title="7-Day Limit", icon="📅", default_limit=4000000, active_color=("#7c3aed", "#a78bfa"), all_color=("#7c3aed", "#a78bfa"))
+
+            # Active and All tag/icon color assignments
+            self.assertEqual(gauge_5h.lbl_big_active_icon.cget("text_color"), ("#1d4ed8", "#38bdf8"))
+            self.assertEqual(gauge_5h.lbl_act_tag.cget("text_color"), ("#1d4ed8", "#38bdf8"))
+            self.assertEqual(gauge_5h.lbl_big_all_icon.cget("text_color"), ("#1d4ed8", "#38bdf8"))
+            self.assertEqual(gauge_5h.lbl_all_tag.cget("text_color"), ("#1d4ed8", "#38bdf8"))
+
+            self.assertEqual(gauge_7d.lbl_big_active_icon.cget("text_color"), ("#7c3aed", "#a78bfa"))
+            self.assertEqual(gauge_7d.lbl_act_tag.cget("text_color"), ("#7c3aed", "#a78bfa"))
+            self.assertEqual(gauge_7d.lbl_big_all_icon.cget("text_color"), ("#7c3aed", "#a78bfa"))
+            self.assertEqual(gauge_7d.lbl_all_tag.cget("text_color"), ("#7c3aed", "#a78bfa"))
+
+            # 5H Green (>60% remaining)
+            gauge_5h.update_data(used_tokens=50000, reset_str="in 4h", pct_remaining=80.0, all_total_toks=50000)
+            self.assertEqual(gauge_5h.lbl_big_all_val.cget("text_color"), ("#15803d", "#10B981"))
+
+            # 5H Amber (20%-60% remaining)
+            gauge_5h.update_data(used_tokens=300000, reset_str="in 2h", pct_remaining=40.0, all_total_toks=30000)
+            self.assertEqual(gauge_5h.lbl_big_all_val.cget("text_color"), ("#b45309", "#F59E0B"))
+
+            # 5H Red (<20% remaining)
+            gauge_5h.update_data(used_tokens=800000, reset_str="in 10m", pct_remaining=10.0, all_total_toks=80000)
+            self.assertEqual(gauge_5h.lbl_big_all_val.cget("text_color"), ("#b91c1c", "#EF4444"))
+
+            # 2. Test MiniHUD colors
+            hud = MiniHUD(root, on_restore_callback=lambda: None)
+            hud.show_7d_expanded = True
+            hud._build_sections()
+
+            # Active 7D label must be purple
+            self.assertEqual(hud.h7_active_lbl.cget("text_color"), ("#7c3aed", "#c084fc"))
+
+            # Green quota
+            hud.update_data({
+                "tokens_5h": 50000, "pct_5h_remaining": 75.0, "reset_5h_str": "in 3h",
+                "tokens_7d": 200000, "pct_7d_remaining": 85.0, "reset_7d_str": "in 5d",
+                "burn_rate_str": "Idle"
+            })
+            self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#15803d", "#10B981"))
+            self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#15803d", "#10B981"))
+            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#1d4ed8", "#60a5fa"))
+            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#7c3aed", "#c084fc"))
+            self.assertEqual(hud.bubble_5h_all_lbl.cget("text_color"), ("#059669", "#34d399"))
+            self.assertEqual(hud.bubble_7d_all_lbl.cget("text_color"), ("#059669", "#34d399"))
+
+            # Amber quota
+            hud.update_data({
+                "tokens_5h": 400000, "pct_5h_remaining": 35.0, "reset_5h_str": "in 2h",
+                "tokens_7d": 1500000, "pct_7d_remaining": 30.0, "reset_7d_str": "in 2d",
+                "burn_rate_str": "Idle"
+            })
+            self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#b45309", "#F59E0B"))
+            self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#b45309", "#F59E0B"))
+            self.assertEqual(hud.bubble_5h_all_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
+            self.assertEqual(hud.bubble_7d_all_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
+
+            # Red quota
+            hud.update_data({
+                "tokens_5h": 900000, "pct_5h_remaining": 8.0, "reset_5h_str": "in 20m",
+                "tokens_7d": 3800000, "pct_7d_remaining": 5.0, "reset_7d_str": "in 4h",
+                "burn_rate_str": "Idle"
+            })
+            self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#b91c1c", "#EF4444"))
+            self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#b91c1c", "#EF4444"))
+            self.assertEqual(hud.bubble_5h_all_lbl.cget("text_color"), ("#dc2626", "#f87171"))
+            self.assertEqual(hud.bubble_7d_all_lbl.cget("text_color"), ("#dc2626", "#f87171"))
+
+            # Active bubble labels must remain untouched
+            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#1d4ed8", "#60a5fa"))
+            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#7c3aed", "#c084fc"))
+
+            # 3. Test Tooltip content helper
+            tooltip_frame = ctk.CTkFrame(root)
+            hud._build_tooltip_content(tooltip_frame)
+            # Find h5_all and d7_all labels inside tooltip
+            labels = [w for w in tooltip_frame.winfo_children() if isinstance(w, ctk.CTkLabel)]
+            all_labels = [l for l in labels if "★ All:" in l.cget("text")]
+            self.assertEqual(len(all_labels), 2)
+            # Both should have red quota color since last report was red (<20%)
+            self.assertEqual(all_labels[0].cget("text_color"), ("#b91c1c", "#EF4444"))
+            self.assertEqual(all_labels[1].cget("text_color"), ("#b91c1c", "#EF4444"))
+
+            # Both h5_hdr and d7_hdr should have red quota color since last report was red (<20%)
+            hdr_labels = [l for l in labels if "WINDOW" in l.cget("text")]
+            self.assertEqual(len(hdr_labels), 2)
+            self.assertEqual(hdr_labels[0].cget("text_color"), ("#b91c1c", "#EF4444"))
+            self.assertEqual(hdr_labels[1].cget("text_color"), ("#b91c1c", "#EF4444"))
+
+            hud.destroy()
+            gauge_5h.destroy()
+            gauge_7d.destroy()
+            tooltip_frame.destroy()
+        finally:
+            root.destroy()
 
 
 
