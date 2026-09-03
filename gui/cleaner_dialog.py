@@ -62,7 +62,8 @@ class CleanerDialog(ctk.CTkToplevel):
         self._build_ui()
         self._refresh_session_list()
 
-        # Key bindings
+        # Key bindings and protocols
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.bind("<Escape>", lambda e: self.destroy())
 
         # Apply dark titlebar attributes BEFORE displaying on screen
@@ -790,6 +791,12 @@ class CleanerDialog(ctk.CTkToplevel):
         )
 
     def destroy(self):
+        if getattr(self, "_active_context_menu", None) is not None:
+            try:
+                self._active_context_menu.destroy()
+            except Exception:
+                pass
+            self._active_context_menu = None
         if getattr(self, "_copied_feedback_timer", None):
             try:
                 self.after_cancel(self._copied_feedback_timer)
@@ -846,6 +853,13 @@ class CleanerDialog(ctk.CTkToplevel):
         self._last_context_menu_time = now
 
         sid = session_dict.get("session_id", "")
+        if getattr(self, "_active_context_menu", None) is not None:
+            try:
+                self._active_context_menu.destroy()
+            except Exception:
+                pass
+            self._active_context_menu = None
+
         is_dark = ctk.get_appearance_mode().lower() == "dark"
         menu = tk.Menu(
             self,
@@ -856,6 +870,7 @@ class CleanerDialog(ctk.CTkToplevel):
             activeforeground="#ffffff",
             bd=1
         )
+        self._active_context_menu = menu
         menu.add_command(
             label="📋 Copy Session ID",
             command=lambda: self._copy_session_id(sid)

@@ -569,9 +569,8 @@ class MiniHUD(ctk.CTkToplevel):
             for sub in [w, getattr(w, "_canvas", None), getattr(w, "_label", None), getattr(w, "_text_label", None), getattr(w, "_image_label", None)]:
                 if sub is not None and hasattr(sub, "bind"):
                     try:
-                        sub.bind("<Button-3>", self._show_context_menu, add="+")
-                        sub.bind("<Button-2>", self._show_context_menu, add="+")
-                        sub.bind("<ButtonRelease-3>", self._show_context_menu, add="+")
+                        sub.bind("<Button-3>", self._show_context_menu)
+                        sub.bind("<Button-2>", self._show_context_menu)
                     except Exception:
                         pass
 

@@ -170,6 +170,7 @@ class AccountLedger:
 
     def __init__(self, ledger_file: Optional[Path] = None, ledger_log_file: Optional[Path] = None):
         self._lock = threading.RLock()
+        self._log_lock = threading.Lock()
         self._is_dirty = False
         self._last_flush_time = 0.0
         self.ledger_file = ledger_file or get_ledger_file()
@@ -200,8 +201,14 @@ class AccountLedger:
                 "account": account_email,
                 **data
             }
-            with open(self.ledger_log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry) + "\n")
+            lock = getattr(self, "_log_lock", None)
+            if lock:
+                with lock:
+                    with open(self.ledger_log_file, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(entry) + "\n")
+            else:
+                with open(self.ledger_log_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry) + "\n")
         except Exception:
             pass
 
@@ -831,18 +838,36 @@ class AccountLedger:
             target_log = getattr(self, "ledger_log_file", None) or getattr(self, "log_file", None)
             if not target_log or not target_log.exists():
                 return
-            content = target_log.read_text(encoding="utf-8", errors="ignore")
-            lines = content.splitlines()
-            if len(lines) > 5000:
-                tmp_log = target_log.with_suffix(".tmp")
-                tmp_log.write_text("\n".join(lines[-2500:]) + "\n", encoding="utf-8")
-                try:
-                    tmp_log.replace(target_log)
-                except OSError:
-                    target_log.write_text("\n".join(lines[-2500:]) + "\n", encoding="utf-8")
-                    tmp_log.unlink(missing_ok=True)
+            lock = getattr(self, "_log_lock", None)
+            if lock:
+                with lock:
+                    self._do_rotate_log(target_log)
+            else:
+                self._do_rotate_log(target_log)
         except Exception:
             pass
+
+    def _do_rotate_log(self, target_log: Path):
+        content = target_log.read_text(encoding="utf-8", errors="ignore")
+        lines = content.splitlines()
+        if len(lines) > 5000:
+            import os
+            tmp_log = target_log.with_suffix(f".tmp.{os.getpid()}")
+            tmp_log.write_text("\n".join(lines[-2500:]) + "\n", encoding="utf-8")
+            rotated = False
+            for attempt in range(5):
+                try:
+                    tmp_log.replace(target_log)
+                    rotated = True
+                    break
+                except OSError:
+                    import time
+                    time.sleep(0.05 * (attempt + 1))
+            if not rotated:
+                try:
+                    target_log.write_text("\n".join(lines[-2500:]) + "\n", encoding="utf-8")
+                finally:
+                    tmp_log.unlink(missing_ok=True)
 
     def update_session(
         self,
@@ -1034,7 +1059,14 @@ class AccountLedger:
             total_candidates = 0
             matched_sessions = 0
 
+            now = ref_time if ref_time is not None else datetime.now(timezone.utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+            cutoff_ts = (now - timedelta(days=7, hours=1)).timestamp()
+
             for s in self.sessions.values():
+                s_mtime = s.get("mtime", 0.0)
+                is_recent = (s_mtime >= cutoff_ts) or (not s_mtime)
                 acc_usage = s.get("account_usage")
                 if acc_usage and isinstance(acc_usage, dict):
                     has_match = False
@@ -1053,7 +1085,8 @@ class AccountLedger:
                             total_prompt += udata.get("prompt", 0)
                             total_thinking += udata.get("thinking", 0)
                             total_candidates += udata.get("candidates", 0)
-                            acc_records.extend(udata.get("records", []))
+                            if is_recent:
+                                acc_records.extend(udata.get("records", []))
                             has_match = True
                     if has_match:
                         matched_sessions += 1
@@ -1072,7 +1105,8 @@ class AccountLedger:
                         total_prompt += s.get("prompt", 0)
                         total_thinking += s.get("thinking", 0)
                         total_candidates += s.get("candidates", 0)
-                        acc_records.extend(s.get("records", []))
+                        if is_recent:
+                            acc_records.extend(s.get("records", []))
                         matched_sessions += 1
 
             grand_total = total_prompt + total_thinking + total_candidates
@@ -1140,11 +1174,18 @@ class AccountLedger:
             total_candidates = 0
             count = 0
 
+            now = ref_time if ref_time is not None else datetime.now(timezone.utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+            cutoff_ts = (now - timedelta(days=7, hours=1)).timestamp()
+
             for s in self.sessions.values():
                 total_prompt += s.get("prompt", 0)
                 total_thinking += s.get("thinking", 0)
                 total_candidates += s.get("candidates", 0)
-                all_records.extend(s.get("records", []))
+                s_mtime = s.get("mtime", 0.0)
+                if s_mtime >= cutoff_ts or not s_mtime:
+                    all_records.extend(s.get("records", []))
                 count += 1
 
             grand_total = total_prompt + total_thinking + total_candidates
@@ -1602,7 +1643,7 @@ class AccountLedger:
                         break
                 if not rt:
                     try:
-                        rt = get_account_realtime_quota(lookup_act, ref_time=now_utc)
+                        rt = get_account_realtime_quota(lookup_act, ref_time=ref_time)
                         if rt:
                             self.realtime_quotas[lookup_act] = rt
                     except Exception:

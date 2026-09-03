@@ -554,6 +554,96 @@ class TestLongRunningStabilityAndLeakPrevention(unittest.TestCase):
             watcher._poll(force=False)
             self.assertAlmostEqual(watcher._last_report_time, time.time(), delta=2.0)
 
+    def test_ghost_session_resurrection_prevention(self):
+        """Verifies that watcher does not resurrect deleted sessions into ledger if transcript file is gone."""
+        from core.watcher import SessionWatcher
+        from core.ledger import AccountLedger
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            log_file = tmp_path / "ledger.jsonl"
+            ledger_file = tmp_path / "usage.json"
+            test_ledger = AccountLedger(ledger_file=ledger_file, ledger_log_file=log_file)
+            test_ledger.sessions["ghost_sid"] = {"total": 500, "session_id": "ghost_sid"}
+
+            watcher = SessionWatcher.__new__(SessionWatcher)
+            watcher._paused = False
+            watcher._poll_lock = threading.Lock()
+            watcher._lock = threading.Lock()
+            watcher._selected_session_id = None
+            watcher._mode_all = False
+            watcher._last_sessions_fingerprint = ()
+            watcher._last_brain_mtimes = {}
+            watcher._last_realtime_mtimes = {}
+            watcher._last_full_scan_time = time.time()
+            watcher._last_report_time = time.time()
+            watcher.latest_account_report = None
+            non_existent_file = tmp_path / "deleted_session" / "transcript.jsonl"
+            watcher.latest_sessions = [{"session_id": "ghost_sid", "file": non_existent_file, "mtime": 100.0, "size": 10}]
+            watcher.on_update_callback = None
+
+            with patch("core.watcher.get_all_session_files", return_value=watcher.latest_sessions), \
+                 patch("core.ledger.ledger", test_ledger), \
+                 patch("core.session_finder.find_all_brain_dirs", return_value=[]), \
+                 patch("core.account_manager.has_auth_credentials_changed", return_value=False):
+                watcher._poll(force=True)
+                self.assertNotIn("ghost_sid", test_ledger.sessions)
+                self.assertEqual(len(watcher.latest_sessions), 0)
+
+    def test_batch_cleaner_single_flush(self):
+        """Verifies that prune_sessions_keep_latest only flushes ledger to disk once at the end."""
+        from core.cleaner import prune_sessions_keep_latest
+        from core.ledger import ledger
+
+        mock_sessions = [
+            {"session_id": f"sid_{i}", "folder": f"/dummy/{i}", "file": f"/dummy/{i}/t.jsonl", "mtime": float(i)}
+            for i in range(10)
+        ]
+        with patch("core.cleaner.get_all_session_files", return_value=mock_sessions), \
+             patch("core.cleaner.delete_session_files", return_value=(True, 100, "deleted")) as mock_del, \
+             patch.object(ledger, "flush_to_disk") as mock_flush:
+            res = prune_sessions_keep_latest(n_latest=3, keep_active=False, delete_disk_files=False)
+            self.assertEqual(res["deleted_count"], 7)
+            for call in mock_del.call_args_list:
+                self.assertFalse(call.kwargs.get("flush", True))
+            self.assertEqual(mock_flush.call_count, 1)
+
+    def test_realtime_quota_30s_cache_hit(self):
+        """Verifies that load_all_realtime_quotas caches within 30 seconds for live datetime lookups."""
+        import core.realtime_quota as rq
+        rq._CACHED_REALTIME_QUOTAS = {"user@example.com": {"email": "user@example.com", "total": 100}}
+        rq._LAST_REALTIME_QUOTAS_TIME = time.time()
+
+        now_utc = datetime.now(timezone.utc)
+        quotas = rq.load_all_realtime_quotas(ref_time=now_utc, force_refresh=False)
+        self.assertEqual(quotas, rq._CACHED_REALTIME_QUOTAS)
+
+    def test_context_menu_destroyed_on_reopen(self):
+        """Verifies that SessionTable destroys any prior context menu before allocating a new one."""
+        from gui.components.session_table import SessionTable
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            table = SessionTable(root, on_select_session=lambda sid, is_all: None)
+            old_menu = tk.Menu(table, tearoff=0)
+            table._active_context_menu = old_menu
+
+            with patch("tkinter.Menu.tk_popup"), patch("tkinter.Menu.grab_release"):
+                fake_event = type("Event", (), {"x_root": 100, "y_root": 100})()
+                table._show_context_menu(fake_event, {"session_id": "test_s", "folder": ""})
+
+                self.assertNotEqual(table._active_context_menu, old_menu)
+                table.destroy()
+                self.assertIsNone(table._active_context_menu)
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
 
 if __name__ == "__main__":
     unittest.main()
+

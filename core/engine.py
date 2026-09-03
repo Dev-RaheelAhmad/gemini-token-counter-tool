@@ -6,6 +6,17 @@ from typing import Dict, List, Optional, Tuple, Any
 
 # In-memory cache for parsed files: path -> (mtime, size, byte_offset, stats, line_records, first_prompt)
 _FILE_CACHE: Dict[str, Tuple[float, int, int, Dict[str, int], List[Tuple[Optional[datetime], int, int, int]], str]] = {}
+_FILE_CACHE_LIMIT = 200
+
+
+def set_file_cache_limit(limit: int):
+    """Dynamically adjusts the file cache capacity to match discovered session workspace size."""
+    global _FILE_CACHE_LIMIT
+    _FILE_CACHE_LIMIT = max(50, limit)
+
+
+# Precompiled regex patterns for high-performance zero-allocation parsing
+_THOUGHT_RE = re.compile(r"<(?:thought|thinking)>(.*?)</(?:thought|thinking)>", flags=re.DOTALL)
 
 
 def estimate_tokens(text: str) -> int:
@@ -62,12 +73,15 @@ def extract_line_tokens(data: dict) -> Tuple[int, int, int]:
 
     full_text = "\n".join(text_pieces).strip()
     if full_text:
-        thought_matches = re.findall(r"<(?:thought|thinking)>(.*?)</(?:thought|thinking)>", full_text, flags=re.DOTALL)
-        for thought in thought_matches:
-            thinking_toks += estimate_tokens(thought)
+        if "<thought" in full_text or "<thinking" in full_text:
+            thought_matches = _THOUGHT_RE.findall(full_text)
+            for thought in thought_matches:
+                thinking_toks += estimate_tokens(thought)
 
-        cleaned_text = re.sub(r"<(?:thought|thinking)>.*?</(?:thought|thinking)>", "", full_text, flags=re.DOTALL).strip()
-        tokens = estimate_tokens(cleaned_text)
+            cleaned_text = _THOUGHT_RE.sub("", full_text).strip()
+            tokens = estimate_tokens(cleaned_text)
+        else:
+            tokens = estimate_tokens(full_text)
 
         if step_type == "PLANNER_RESPONSE":
             candidate_toks += tokens
@@ -101,6 +115,7 @@ def parse_transcript_file_cached(file_path: Any) -> Tuple[Dict[str, int], List[T
         stat = file_path.stat()
         mtime, size = stat.st_mtime, stat.st_size
     except (OSError, ValueError):
+        _FILE_CACHE.pop(file_key, None)
         return {"prompt": 0, "candidates": 0, "thinking": 0}, [], ""
 
     cached_mtime, cached_size, cached_offset = 0.0, 0, 0
@@ -121,6 +136,11 @@ def parse_transcript_file_cached(file_path: Any) -> Tuple[Dict[str, int], List[T
             cached_offset = 0
 
     new_offset = cached_offset
+    delta_stats = {"prompt": 0, "candidates": 0, "thinking": 0}
+    delta_records: List[Tuple[Optional[datetime], int, int, int]] = []
+    delta_first_prompt = first_prompt
+    read_ok = False
+
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             if cached_offset > 0:
@@ -132,25 +152,36 @@ def parse_transcript_file_cached(file_path: Any) -> Tuple[Dict[str, int], List[T
                 try:
                     data = json.loads(line_str)
                     if isinstance(data, dict):
-                        if not first_prompt:
+                        if not delta_first_prompt:
                             fp = extract_first_prompt(data)
                             if fp:
-                                first_prompt = fp
+                                delta_first_prompt = fp
                         ts = parse_iso_time(data.get("created_at"))
                         p, th, c = extract_line_tokens(data)
-                        stats["prompt"] += p
-                        stats["thinking"] += th
-                        stats["candidates"] += c
-                        line_records.append((ts, p, th, c))
+                        delta_stats["prompt"] += p
+                        delta_stats["thinking"] += th
+                        delta_stats["candidates"] += c
+                        delta_records.append((ts, p, th, c))
                 except json.JSONDecodeError:
                     continue
             new_offset = f.tell()
+            read_ok = True
     except Exception:
         pass
 
-    # Prune old cache entries if cache reaches maximum limit
-    if len(_FILE_CACHE) >= 200 and file_key not in _FILE_CACHE:
-        oldest_keys = list(_FILE_CACHE.keys())[:50]
+    if read_ok:
+        stats["prompt"] += delta_stats["prompt"]
+        stats["thinking"] += delta_stats["thinking"]
+        stats["candidates"] += delta_stats["candidates"]
+        line_records.extend(delta_records)
+        first_prompt = delta_first_prompt
+    else:
+        new_offset = cached_offset
+
+    # Dynamic cache limit scaling with workspace size
+    if len(_FILE_CACHE) >= _FILE_CACHE_LIMIT and file_key not in _FILE_CACHE:
+        prune_count = max(10, _FILE_CACHE_LIMIT // 4)
+        oldest_keys = list(_FILE_CACHE.keys())[:prune_count]
         for k in oldest_keys:
             _FILE_CACHE.pop(k, None)
 

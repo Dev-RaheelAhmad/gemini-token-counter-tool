@@ -30,19 +30,35 @@ def bucket_records_by_time(
     else:
         now = datetime.now().astimezone() if use_local_time else datetime.now(timezone.utc)
 
+    timeframe_norm = timeframe.lower().strip()
+
+    # Determine UTC cutoff to avoid timezone conversion churn on historical records
+    utc_cutoff = None
+    ref_dt = ref_time if ref_time is not None else datetime.now(timezone.utc)
+    if ref_dt.tzinfo is None:
+        ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+
+    if timeframe_norm in ("5h", "5_hours", "5hour"):
+        utc_cutoff = ref_dt - timedelta(hours=6)
+    elif timeframe_norm in ("24h", "1d", "day", "daily"):
+        utc_cutoff = ref_dt - timedelta(days=2)
+    elif timeframe_norm in ("7d", "7_days", "week", "weekly"):
+        utc_cutoff = ref_dt - timedelta(days=8)
+
     # Filter out empty or None-timestamp records (unless in session mode)
     valid_records: List[Tuple[datetime, int, int, int]] = []
     for dt, p, th, c in records:
         if dt is not None:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
+            if utc_cutoff and dt < utc_cutoff:
+                continue
             if use_local_time:
                 dt = dt.astimezone()
             valid_records.append((dt, p, th, c))
         elif timeframe == "session" and (p + th + c > 0):
             valid_records.append((now, p, th, c))
 
-    timeframe_norm = timeframe.lower().strip()
     buckets: List[Dict[str, Any]] = []
 
     # 0. 5-HOUR TIMEFRAME (11 thirty-minute buckets covering past 5h + current ongoing 30m block)

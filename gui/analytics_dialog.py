@@ -97,7 +97,10 @@ class AnalyticsDialog(ctk.CTkToplevel):
         self._build_ui()
         self._load_data()
 
-        # Key bindings
+        self._pending_after_ids: List[str] = []
+
+        # Key bindings and window protocols
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.bind("<Escape>", lambda e: self.destroy())
 
         # Apply dark titlebar attributes BEFORE displaying on screen
@@ -115,13 +118,20 @@ class AnalyticsDialog(ctk.CTkToplevel):
         try:
             if not self.winfo_exists():
                 return None
+            tid_holder = [None]
             def _wrapper(*cb_args):
                 try:
+                    if hasattr(self, "_pending_after_ids") and tid_holder[0] in self._pending_after_ids:
+                        self._pending_after_ids.remove(tid_holder[0])
                     if self.winfo_exists():
                         func(*cb_args)
                 except Exception:
                     pass
-            return self.after(delay_ms, _wrapper, *args)
+            tid = self.after(delay_ms, _wrapper, *args)
+            tid_holder[0] = tid
+            if hasattr(self, "_pending_after_ids"):
+                self._pending_after_ids.append(tid)
+            return tid
         except Exception:
             pass
         return None
@@ -955,6 +965,13 @@ class AnalyticsDialog(ctk.CTkToplevel):
 
     def destroy(self):
         """Cleanly destroys the analytics dialog without affecting global app timers."""
+        if hasattr(self, "_pending_after_ids"):
+            for tid in list(self._pending_after_ids):
+                try:
+                    self.after_cancel(tid)
+                except Exception:
+                    pass
+            self._pending_after_ids.clear()
         if hasattr(self.master, "analytics_dialog_window") and self.master.analytics_dialog_window == self:
             self.master.analytics_dialog_window = None
         super().destroy()

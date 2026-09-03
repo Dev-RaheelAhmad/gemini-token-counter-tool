@@ -1,5 +1,6 @@
 import os
 import json
+import threading
 from pathlib import Path
 from typing import Dict, Any
 
@@ -72,11 +73,16 @@ def get_config_file() -> Path:
 
 class ConfigManager:
     def __init__(self):
+        self._lock = threading.RLock()
         self.config_path = get_config_file()
         self.data: Dict[str, Any] = DEFAULT_CONFIG.copy()
         self.load()
 
     def load(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._load_unlocked()
+
+    def _load_unlocked(self) -> Dict[str, Any]:
         if self.config_path.exists():
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
@@ -186,39 +192,42 @@ class ConfigManager:
         return self.data
 
     def save(self):
-        try:
-            temp_file = Path(self.config_path).with_suffix(".tmp")
-            temp_file.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
-            max_attempts = 5
-            for attempt in range(max_attempts):
-                try:
-                    temp_file.replace(self.config_path)
-                    break
-                except OSError:
-                    if attempt == max_attempts - 1:
-                        try:
-                            Path(self.config_path).write_text(json.dumps(self.data, indent=2), encoding="utf-8")
-                            temp_file.unlink(missing_ok=True)
-                        except Exception:
-                            pass
-                    else:
-                        import time
-                        time.sleep(0.05 * (2 ** attempt))
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                temp_file = Path(self.config_path).with_suffix(".tmp")
+                temp_file.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
+                max_attempts = 5
+                for attempt in range(max_attempts):
+                    try:
+                        temp_file.replace(self.config_path)
+                        break
+                    except OSError:
+                        if attempt == max_attempts - 1:
+                            try:
+                                Path(self.config_path).write_text(json.dumps(self.data, indent=2), encoding="utf-8")
+                                temp_file.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                        else:
+                            import time
+                            time.sleep(0.05 * (2 ** attempt))
+            except Exception:
+                pass
 
     def get(self, key: str, default: Any = None) -> Any:
-        val = self.data.get(key)
-        if val is not None:
-            return val
-        if default is not None:
-            return default
-        return DEFAULT_CONFIG.get(key)
+        with self._lock:
+            val = self.data.get(key)
+            if val is not None:
+                return val
+            if default is not None:
+                return default
+            return DEFAULT_CONFIG.get(key)
 
     def set(self, key: str, value: Any, save_now: bool = True):
-        self.data[key] = value
-        if save_now:
-            self.save()
+        with self._lock:
+            self.data[key] = value
+            if save_now:
+                self.save()
 
 
 # Singleton config instance

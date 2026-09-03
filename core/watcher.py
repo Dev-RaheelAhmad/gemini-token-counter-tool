@@ -3,7 +3,7 @@ import threading
 from typing import Callable, List, Optional, Dict, Any
 from pathlib import Path
 from core.session_finder import get_all_session_files
-from core.engine import get_single_session_report, parse_transcript_file_cached
+from core.engine import get_single_session_report, parse_transcript_file_cached, set_file_cache_limit
 from core.config import config
 
 
@@ -69,13 +69,14 @@ class SessionWatcher:
             self.force_refresh()
 
     def start(self):
-        if self._running:
-            return
-        self._running = True
-        self._paused = False
-        self._pause_event.set()
-        self._thread = threading.Thread(target=self._run_loop, daemon=True, name="TokenCounterWatcher")
-        self._thread.start()
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
+            self._paused = False
+            self._pause_event.set()
+            self._thread = threading.Thread(target=self._run_loop, daemon=True, name="TokenCounterWatcher")
+            self._thread.start()
 
     def force_refresh(self):
         """Triggers an immediate background polling cycle without creating unmanaged thread thrashing."""
@@ -164,6 +165,9 @@ class SessionWatcher:
                 self.latest_sessions = sessions
             else:
                 sessions = self.latest_sessions
+
+            if sessions:
+                set_file_cache_limit(max(200, len(sessions) + 50))
 
             with self._lock:
                 target_id = self._selected_session_id
@@ -258,46 +262,73 @@ class SessionWatcher:
                 except Exception:
                     pass
 
-            # Parse and sync all discovered session log files into the ledger
-            for idx, s in enumerate(sessions):
-                stats, records, fp = parse_transcript_file_cached(s["file"])
-                sid = s.get("session_id", "unknown")
-                existing_acc = ledger.get_session_account(sid)
+            should_reparse_files = (
+                force or
+                brain_changed or
+                files_changed or
+                auth_changed or
+                rt_changed or
+                live_fp_tuple != self._last_sessions_fingerprint or
+                self.latest_account_report is None
+            )
 
-                # The active session (idx == 0) dynamically tracks the currently active logged-in Google account
-                # Historical sessions (idx > 0) retain their locked owner to preserve historical isolation.
-                # If an unassigned historical session is found, correlate its timestamp with known account activity ranges.
-                if idx == 0 and active_account and active_account not in ("Default", "Local"):
-                    sess_account = active_account
-                    force_acc = True
-                elif not existing_acc or existing_acc in ("Default", "Local", "None", "Unassigned"):
-                    sess_account = find_best_matching_account(s.get("mtime", 0.0), fallback_account=active_account)
-                    force_acc = False
-                else:
-                    sess_account = existing_acc
-                    force_acc = False
+            if should_reparse_files:
+                # Filter out any sessions whose log files no longer exist on disk (prevents ghost resurrection)
+                valid_sessions = []
+                for s in sessions:
+                    f_path = Path(s.get("file", ""))
+                    if f_path.exists():
+                        valid_sessions.append(s)
+                    else:
+                        sid = s.get("session_id")
+                        if sid and sid in ledger.sessions:
+                            ledger.remove_session(sid)
+                sessions = valid_sessions
+                self.latest_sessions = sessions
 
-                ledger.update_session(
-                    session_id=sid,
-                    account_email=sess_account,
-                    stats=stats,
-                    line_records=records,
-                    first_prompt=fp,
-                    last_active=s.get("last_active_str", "Unknown"),
-                    mtime=s.get("mtime", 0.0),
-                    size=s.get("size", 0),
-                    folder_path=str(s.get("folder", "")),
-                    file_path=str(s.get("file", "")),
-                    force_account=force_acc
-                )
-                s["tokens"] = stats.get("prompt", 0) + stats.get("thinking", 0) + stats.get("candidates", 0)
-                s["account"] = sess_account
-                if fp:
-                    s["first_prompt"] = fp
-                    s["title"] = fp
+                # Parse and sync all discovered session log files into the ledger
+                for idx, s in enumerate(sessions):
+                    stats, records, fp = parse_transcript_file_cached(s["file"])
+                    sid = s.get("session_id", "unknown")
+                    existing_acc = ledger.get_session_account(sid)
 
-            # Re-sort sessions after parsing in case mtimes updated
-            sessions.sort(key=lambda s: s.get("mtime", 0.0), reverse=True)
+                    # The active session (idx == 0) dynamically tracks the currently active logged-in Google account
+                    # Historical sessions (idx > 0) retain their locked owner to preserve historical isolation.
+                    # If an unassigned historical session is found, correlate its timestamp with known account activity ranges.
+                    if idx == 0 and active_account and active_account not in ("Default", "Local"):
+                        sess_account = active_account
+                        force_acc = True
+                    elif not existing_acc or existing_acc in ("Default", "Local", "None", "Unassigned"):
+                        sess_account = find_best_matching_account(s.get("mtime", 0.0), fallback_account=active_account)
+                        force_acc = False
+                    else:
+                        sess_account = existing_acc
+                        force_acc = False
+
+                    ledger.update_session(
+                        session_id=sid,
+                        account_email=sess_account,
+                        stats=stats,
+                        line_records=records,
+                        first_prompt=fp,
+                        last_active=s.get("last_active_str", "Unknown"),
+                        mtime=s.get("mtime", 0.0),
+                        size=s.get("size", 0),
+                        folder_path=str(s.get("folder", "")),
+                        file_path=str(s.get("file", "")),
+                        force_account=force_acc
+                    )
+                    s["tokens"] = stats.get("prompt", 0) + stats.get("thinking", 0) + stats.get("candidates", 0)
+                    s["account"] = sess_account
+                    if fp:
+                        s["first_prompt"] = fp
+                        s["title"] = fp
+
+                # Re-sort sessions after parsing in case mtimes updated
+                sessions.sort(key=lambda s: s.get("mtime", 0.0), reverse=True)
+
+            if target_session and not Path(target_session.get("file", "")).exists():
+                target_session = sessions[0] if sessions else None
 
             # Generate reports using cached engine
             account_report = ledger.get_account_report(active_account)
@@ -358,9 +389,17 @@ class SessionWatcher:
                         pass
 
     def stop(self):
-        self._running = False
-        self._pause_event.set()
-        self._wake_event.set()
+        with self._lock:
+            self._running = False
+            self._pause_event.set()
+            self._wake_event.set()
+            th = self._thread
+            self._thread = None
+        if th and th.is_alive() and threading.current_thread() != th:
+            try:
+                th.join(timeout=2.0)
+            except Exception:
+                pass
         try:
             from core.ledger import ledger
             ledger.flush_to_disk(force=True)

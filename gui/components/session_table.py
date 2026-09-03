@@ -652,6 +652,13 @@ class SessionTable(ctk.CTkFrame):
         sid = session["session_id"]
         folder = session.get("folder")
 
+        if getattr(self, "_active_context_menu", None) is not None:
+            try:
+                self._active_context_menu.destroy()
+            except Exception:
+                pass
+            self._active_context_menu = None
+
         is_dark = ctk.get_appearance_mode().lower() == "dark"
         menu = tk.Menu(
             self,
@@ -662,6 +669,7 @@ class SessionTable(ctk.CTkFrame):
             activeforeground="#ffffff",
             bd=1
         )
+        self._active_context_menu = menu
 
         def _copy_id():
             self.clipboard_clear()
@@ -762,4 +770,13 @@ class SessionTable(ctk.CTkFrame):
         if ledger.reassign_session_account(session_id, new_account):
             if self.on_reassign_account:
                 self.on_reassign_account(session_id, new_account)
+
+    def destroy(self):
+        if getattr(self, "_active_context_menu", None) is not None:
+            try:
+                self._active_context_menu.destroy()
+            except Exception:
+                pass
+            self._active_context_menu = None
+        super().destroy()
 

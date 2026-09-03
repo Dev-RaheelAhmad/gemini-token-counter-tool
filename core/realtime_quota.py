@@ -231,8 +231,9 @@ def load_all_realtime_quotas(ref_time: Optional[datetime] = None, force_refresh:
     global _CACHED_REALTIME_QUOTAS, _LAST_REALTIME_QUOTAS_TIME
     import time
     now = time.time()
+    is_live_query = ref_time is None or abs((ref_time - datetime.now(timezone.utc)).total_seconds()) < 5.0
 
-    if not force_refresh and _CACHED_REALTIME_QUOTAS is not None and (now - _LAST_REALTIME_QUOTAS_TIME < 30.0) and ref_time is None:
+    if not force_refresh and _CACHED_REALTIME_QUOTAS is not None and (now - _LAST_REALTIME_QUOTAS_TIME < 30.0) and is_live_query:
         return dict(_CACHED_REALTIME_QUOTAS)
 
     results: Dict[str, Dict[str, Any]] = {}
@@ -250,7 +251,7 @@ def load_all_realtime_quotas(ref_time: Optional[datetime] = None, force_refresh:
         except Exception:
             continue
 
-    if ref_time is None:
+    if is_live_query:
         _CACHED_REALTIME_QUOTAS = dict(results)
         _LAST_REALTIME_QUOTAS_TIME = now
 

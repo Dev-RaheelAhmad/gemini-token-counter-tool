@@ -150,7 +150,8 @@ def delete_session_files(
     folder_path: Optional[str] = None,
     file_path: Optional[str] = None,
     delete_disk_files: bool = True,
-    custom_dirs: Optional[List[str]] = None
+    custom_dirs: Optional[List[str]] = None,
+    flush: bool = True
 ) -> Tuple[bool, int, str]:
     """
     Safely deletes a session's directory and transcript files from disk (if delete_disk_files is True),
@@ -238,7 +239,8 @@ def delete_session_files(
 
     # 5. Remove from in-memory ledger and flush
     ledger.remove_session(session_id)
-    ledger.flush_to_disk(force=True)
+    if flush:
+        ledger.flush_to_disk(force=True)
 
     action_str = "deleted & freed storage" if delete_disk_files else "removed from ledger"
     return True, freed_bytes, f"Session '{session_id[:16]}...' {action_str} ({format_bytes(freed_bytes)})"
@@ -268,10 +270,19 @@ def prune_sessions_by_age(older_than_days: int, keep_active: bool = True, delete
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             if dt < cutoff:
-                ok, freed, _ = delete_session_files(sid, folder_path=str(s.get("folder", "")), file_path=str(s.get("file", "")), delete_disk_files=delete_disk_files)
+                ok, freed, _ = delete_session_files(
+                    sid,
+                    folder_path=str(s.get("folder", "")),
+                    file_path=str(s.get("file", "")),
+                    delete_disk_files=delete_disk_files,
+                    flush=False
+                )
                 if ok:
                     deleted_ids.append(sid)
                     total_freed += freed
+
+    if deleted_ids:
+        ledger.flush_to_disk(force=True)
 
     return {
         "deleted_count": len(deleted_ids),
@@ -301,11 +312,15 @@ def prune_sessions_keep_latest(n_latest: int = 10, keep_active: bool = True, del
             sid,
             folder_path=str(s.get("folder", "")),
             file_path=str(s.get("file", "")),
-            delete_disk_files=delete_disk_files
+            delete_disk_files=delete_disk_files,
+            flush=False
         )
         if ok:
             deleted_ids.append(sid)
             total_freed += freed
+
+    if deleted_ids:
+        ledger.flush_to_disk(force=True)
 
     return {
         "deleted_count": len(deleted_ids),
@@ -336,11 +351,15 @@ def prune_empty_sessions(delete_disk_files: bool = True) -> Dict[str, Any]:
                 sid,
                 folder_path=str(s.get("folder", "")),
                 file_path=str(s.get("file", "")),
-                delete_disk_files=delete_disk_files
+                delete_disk_files=delete_disk_files,
+                flush=False
             )
             if ok:
                 deleted_ids.append(sid)
                 total_freed += freed
+
+    if deleted_ids:
+        ledger.flush_to_disk(force=True)
 
     return {
         "deleted_count": len(deleted_ids),
@@ -369,11 +388,15 @@ def prune_all_previous(keep_active: bool = True, delete_disk_files: bool = True)
             sid,
             folder_path=str(s.get("folder", "")),
             file_path=str(s.get("file", "")),
-            delete_disk_files=delete_disk_files
+            delete_disk_files=delete_disk_files,
+            flush=False
         )
         if ok:
             deleted_ids.append(sid)
             total_freed += freed
+
+    if deleted_ids:
+        ledger.flush_to_disk(force=True)
 
     return {
         "deleted_count": len(deleted_ids),
