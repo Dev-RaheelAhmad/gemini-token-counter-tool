@@ -1200,77 +1200,39 @@ class GeminiTokenCounterApp(ctk.CTk):
             if self.winfo_exists():
                 self._safe_after(10000, self._heartbeat_watcher_activity)
 
+    @staticmethod
+    def _is_window_active(win) -> bool:
+        """Helper returning True if a Tk/CTk window exists, is mapped, and is not minimized or withdrawn."""
+        try:
+            return bool(win and win.winfo_exists() and win.state() in ("normal", "zoomed") and win.winfo_viewable())
+        except Exception:
+            return False
+
     def _update_watcher_activity(self):
         """
         Dynamically controls background watcher synchronization:
-        - If main dashboard, MiniHUD, Analytics, Cleaner, or Settings dialog is visible and active -> watcher runs normally.
-        - If all UI windows are minimized, closed to tray, or hidden from viewport -> watcher is paused
+        - If ANY window of this tool (main parent window, Mini-Hub, Floating Bubble, dialogs, popups)
+          is visible and active -> watcher runs normally.
+        - If ALL UI windows are minimized, closed to tray, or hidden -> watcher is paused
           with 0% CPU, 0 disk I/O, and zero background processing.
         """
-        is_main_in_view = False
+        import tkinter as tk
+
+        # 1. Collect root window and all child toplevels (MiniHUD, Bubble, dialogs)
+        candidate_windows = [self]
         try:
-            if self.winfo_exists():
-                state = self.state()
-                is_main_in_view = (state in ("normal", "zoomed") and bool(self.winfo_viewable()))
+            candidate_windows.extend(w for w in self.winfo_children() if isinstance(w, (ctk.CTkToplevel, tk.Toplevel)))
         except Exception:
             pass
 
-        is_hud_in_view = False
-        try:
-            if self.mini_hud_window and self.mini_hud_window.winfo_exists():
-                hud_state = self.mini_hud_window.state()
-                is_hud_in_view = (hud_state in ("normal", "zoomed") and bool(self.mini_hud_window.winfo_viewable()))
-        except Exception:
-            pass
+        # 2. Also check explicitly tracked window attributes in case any is detached or separately managed
+        for attr in ("mini_hud_window", "analytics_dialog_window", "cleaner_dialog_window", "settings_dialog_window"):
+            w = getattr(self, attr, None)
+            if w and w not in candidate_windows:
+                candidate_windows.append(w)
 
-        is_analytics_in_view = False
-        try:
-            if self.analytics_dialog_window and self.analytics_dialog_window.winfo_exists():
-                is_analytics_in_view = (self.analytics_dialog_window.state() in ("normal", "zoomed") and bool(self.analytics_dialog_window.winfo_viewable()))
-        except Exception:
-            pass
-
-        is_cleaner_in_view = False
-        try:
-            if self.cleaner_dialog_window and self.cleaner_dialog_window.winfo_exists():
-                is_cleaner_in_view = (self.cleaner_dialog_window.state() in ("normal", "zoomed") and bool(self.cleaner_dialog_window.winfo_viewable()))
-        except Exception:
-            pass
-
-        is_settings_in_view = False
-        try:
-            if self.settings_dialog_window and self.settings_dialog_window.winfo_exists():
-                is_settings_in_view = (self.settings_dialog_window.state() in ("normal", "zoomed") and bool(self.settings_dialog_window.winfo_viewable()))
-        except Exception:
-            pass
-
-        # Dynamic scan: also inspect any other toplevel windows created by this app
-        is_any_other_window_in_view = False
-        try:
-            import tkinter as tk
-            for child in self.winfo_children():
-                if isinstance(child, (ctk.CTkToplevel, tk.Toplevel)):
-                    if child.winfo_exists() and child not in (
-                        getattr(self, "mini_hud_window", None),
-                        getattr(self, "analytics_dialog_window", None),
-                        getattr(self, "cleaner_dialog_window", None),
-                        getattr(self, "settings_dialog_window", None)
-                    ):
-                        c_state = child.state()
-                        if c_state in ("normal", "zoomed") and bool(child.winfo_viewable()):
-                            is_any_other_window_in_view = True
-                            break
-        except Exception:
-            pass
-
-        ui_is_in_view = (
-            is_main_in_view
-            or is_hud_in_view
-            or is_analytics_in_view
-            or is_cleaner_in_view
-            or is_settings_in_view
-            or is_any_other_window_in_view
-        )
+        # 3. Single-place unified evaluation
+        ui_is_in_view = any(self._is_window_active(w) for w in candidate_windows)
 
         if ui_is_in_view:
             if self.watcher.is_paused():
