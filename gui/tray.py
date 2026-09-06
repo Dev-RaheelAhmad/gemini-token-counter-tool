@@ -8,7 +8,7 @@ import pystray
 _ICON_IMAGE_CACHE: dict = {}
 
 
-def create_tray_icon_image(status_color: str = "#3B82F6") -> Image.Image:
+def create_tray_icon_image(status_color: str = "#10B981") -> Image.Image:
     """Creates or returns a cached sleek 64x64 tray icon with an illuminated Gemini badge."""
     if status_color in _ICON_IMAGE_CACHE:
         return _ICON_IMAGE_CACHE[status_color]
@@ -108,6 +108,40 @@ def format_tray_tooltip(
     return truncate_utf16(full_text, 127)
 
 
+def compute_tray_status_color(
+    report: Optional[dict] = None,
+    config: Optional[dict] = None
+) -> str:
+    """Computes the system tray status color (#10B981 green, #F59E0B amber, #EF4444 red)
+
+    based on 5H remaining quota limit or manual limits configuration.
+    """
+    rep = report or {}
+    cfg = config or {}
+    show_manual = bool(cfg.get("show_manual_limits"))
+    limit_5h = int(cfg.get("limit_5h") or 1_000_000)
+
+    if show_manual:
+        used_5h = rep.get("tokens_5h", 0)
+        pct_5h_used = (used_5h / limit_5h) * 100 if limit_5h > 0 else 0
+        if pct_5h_used < 60.0:
+            return "#10B981"
+        elif pct_5h_used < 85.0:
+            return "#F59E0B"
+        else:
+            return "#EF4444"
+    else:
+        pct_5h_rem = float(rep.get("pct_5h_remaining", 0.0))
+        secs_5h = rep.get("secs_5h_remaining", 0)
+        # Fully recovered/refreshed (0s recovery countdown) or >=60% remaining -> Green
+        if (secs_5h == 0 and pct_5h_rem == 0.0) or pct_5h_rem >= 60.0:
+            return "#10B981"
+        elif pct_5h_rem >= 20.0:
+            return "#F59E0B"
+        else:
+            return "#EF4444"
+
+
 class SystemTrayManager:
     """Manages the Windows System Tray icon, context menu, and tooltip notifications."""
 
@@ -147,7 +181,7 @@ class SystemTrayManager:
             pystray.MenuItem("❌ Exit", lambda: self._handle_quit())
         )
 
-        initial_color = "#3B82F6"
+        initial_color = "#10B981"
         initial_title = "Gemini Token Counter - Live"
         self._last_status_color = initial_color
         self._last_tooltip_text = initial_title
@@ -162,7 +196,7 @@ class SystemTrayManager:
         self._thread = threading.Thread(target=self.icon.run, daemon=True, name="TrayThread")
         self._thread.start()
 
-    def update_tooltip(self, tooltip_text: str, status_color: str = "#3B82F6"):
+    def update_tooltip(self, tooltip_text: str, status_color: str = "#10B981"):
         if not self.icon:
             return
 

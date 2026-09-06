@@ -13,7 +13,7 @@ from gui.components.quota_gauge import QuotaGauge
 from gui.components.usage_chart import UsageChart
 from gui.components.session_table import SessionTable
 from gui.mini_hud import MiniHUD
-from gui.tray import SystemTrayManager, format_tray_tooltip
+from gui.tray import SystemTrayManager, format_tray_tooltip, compute_tray_status_color
 from gui.analytics_dialog import AnalyticsDialog
 from gui.cleaner_dialog import CleanerDialog
 from gui.window_utils import apply_windows_dark_titlebar, center_window_on_screen, cancel_all_pending_after_events, get_screen_work_area, get_window_scale
@@ -938,15 +938,15 @@ class GeminiTokenCounterApp(ctk.CTk):
             self.mini_hud_window.update_data(report=all_report, session_report=active_report)
 
         # 10. Update System Tray Tooltip & Icon
-        used_5h = display_report.get("tokens_5h", 0)
-        pct_5h = (used_5h / limit_5h) * 100 if limit_5h > 0 else 0
         tray_text = format_tray_tooltip(
             display_report=display_report,
             active_report=active_report,
             all_report=all_report,
             account_name=active_google_account
         )
-        tray_color = "#EF4444" if pct_5h >= 85 else ("#F59E0B" if pct_5h >= 60 else "#3B82F6")
+
+        all_rep = all_report or display_report or {}
+        tray_color = compute_tray_status_color(all_rep, config)
         self.tray.update_tooltip(tray_text, status_color=tray_color)
 
         # 11. Refresh active Analytics Dialog if open

@@ -1524,12 +1524,12 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
                 self.title = ""
                 self.icon = None
         tray.icon = DummyIcon()
-        tray._last_status_color = "#3B82F6"
+        tray._last_status_color = "#10B981"
         tray._last_tooltip_text = "Initial Text"
 
         # 1. Update with identical values -> icon & title should not be reassigned
-        tray.update_tooltip("Initial Text", status_color="#3B82F6")
-        self.assertEqual(tray._last_status_color, "#3B82F6")
+        tray.update_tooltip("Initial Text", status_color="#10B981")
+        self.assertEqual(tray._last_status_color, "#10B981")
         self.assertEqual(tray._last_tooltip_text, "Initial Text")
         self.assertIsNone(tray.icon.icon)  # Did not create or assign new icon
 
@@ -1541,6 +1541,43 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
         # 3. Update with new text -> should update title
         tray.update_tooltip("Updated Text", status_color="#EF4444")
         self.assertEqual(tray.icon.title, "Updated Text")
+
+    def test_compute_tray_status_color(self):
+        """Verifies that compute_tray_status_color accurately returns traffic-light status colors based on 5H remaining quota and manual limit configs."""
+        from gui.tray import compute_tray_status_color
+
+        # 1. Standard mode: Fully recovered / zero countdown
+        rep_recovered = {"pct_5h_remaining": 0.0, "secs_5h_remaining": 0, "tokens_5h": 0}
+        self.assertEqual(compute_tray_status_color(rep_recovered), "#10B981")
+
+        # 2. Standard mode: Healthy remaining quota (>= 60%)
+        rep_healthy = {"pct_5h_remaining": 85.0, "secs_5h_remaining": 1800}
+        self.assertEqual(compute_tray_status_color(rep_healthy), "#10B981")
+        rep_boundary_60 = {"pct_5h_remaining": 60.0, "secs_5h_remaining": 3600}
+        self.assertEqual(compute_tray_status_color(rep_boundary_60), "#10B981")
+
+        # 3. Standard mode: Amber warning range (20% - 59.9%)
+        rep_amber = {"pct_5h_remaining": 45.0, "secs_5h_remaining": 7200}
+        self.assertEqual(compute_tray_status_color(rep_amber), "#F59E0B")
+        rep_boundary_20 = {"pct_5h_remaining": 20.0, "secs_5h_remaining": 9000}
+        self.assertEqual(compute_tray_status_color(rep_boundary_20), "#F59E0B")
+
+        # 4. Standard mode: Critical quota (< 20%)
+        rep_critical = {"pct_5h_remaining": 15.0, "secs_5h_remaining": 12000}
+        self.assertEqual(compute_tray_status_color(rep_critical), "#EF4444")
+        rep_exhausted = {"pct_5h_remaining": 0.0, "secs_5h_remaining": 14400}
+        self.assertEqual(compute_tray_status_color(rep_exhausted), "#EF4444")
+
+        # 5. Manual limits mode (show_manual_limits=True)
+        cfg_manual = {"show_manual_limits": True, "limit_5h": 1_000_000}
+        rep_man_green = {"tokens_5h": 400_000}  # 40% used (<60%)
+        self.assertEqual(compute_tray_status_color(rep_man_green, cfg_manual), "#10B981")
+
+        rep_man_amber = {"tokens_5h": 700_000}  # 70% used (60-85%)
+        self.assertEqual(compute_tray_status_color(rep_man_amber, cfg_manual), "#F59E0B")
+
+        rep_man_red = {"tokens_5h": 900_000}  # 90% used (>=85%)
+        self.assertEqual(compute_tray_status_color(rep_man_red, cfg_manual), "#EF4444")
 
     def test_credential_discovery_caching(self):
         """Verifies that find_credential_files caches results and can be cleared cleanly."""
