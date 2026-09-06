@@ -41,7 +41,7 @@ Before submitting any changes, verify that the entire test suite passes:
 python -m unittest tests/test_all.py
 ```
 
-All 76 unit tests must pass with 100% success rate.
+All 160 unit tests must pass with 100% success rate.
 
 ---
 
