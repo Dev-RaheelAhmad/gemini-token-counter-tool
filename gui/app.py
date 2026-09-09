@@ -179,6 +179,120 @@ class GeminiTokenCounterApp(ctk.CTk):
         # Start periodic 10-second heartbeat to ensure watcher activity matches UI visibility
         self._safe_after(10000, self._heartbeat_watcher_activity)
 
+        # Companion app warning banner container & strictly one-time initial startup launch
+        self.companion_banner_frame: Optional[ctk.CTkFrame] = None
+        self._companion_startup_triggered: bool = False
+        self._safe_after(500, self._launch_companion_on_initial_start)
+
+    def _launch_companion_on_initial_start(self):
+        """
+        Triggers exclusively once on the initial startup of the application.
+        - If already triggered, does nothing.
+        - If auto-launch is disabled, does nothing.
+        - If antigravity-tools is already running, does absolutely nothing!
+        - If antigravity-tools is not installed, displays the missing tool warning banner.
+        - If antigravity-tools is installed and not running yet, launches it in a detached worker.
+        """
+        if getattr(self, "_companion_startup_triggered", False):
+            return
+        self._companion_startup_triggered = True
+
+        if not bool(config.get("auto_launch_antigravity_tools", True)):
+            self._dismiss_companion_warning_banner()
+            return
+
+        from core.companion import is_antigravity_tools_installed, is_antigravity_tools_running, launch_antigravity_tools
+
+        # 1. If antigravity-tools is already running, do absolutely nothing!
+        is_running, _ = is_antigravity_tools_running()
+        if is_running:
+            self._dismiss_companion_warning_banner()
+            return
+
+        # 2. Antigravity Tools is not running yet; check if installed
+        if not is_antigravity_tools_installed():
+            self._show_companion_warning_banner()
+            return
+
+        # 3. It is installed and not started yet: start it now
+        self._dismiss_companion_warning_banner()
+        import threading
+        threading.Thread(target=launch_antigravity_tools, daemon=True, name="CompanionInitialLaunchWorker").start()
+
+    def _show_companion_warning_banner(self):
+        """Displays a non-intrusive warning banner at the top of the dashboard if Antigravity Tools is missing."""
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+
+        if self.companion_banner_frame and self.companion_banner_frame.winfo_exists():
+            return
+
+        if not hasattr(self, "middle_container") or not self.middle_container.winfo_exists():
+            return
+
+        banner = ctk.CTkFrame(
+            self.main_container,
+            fg_color=("#fef3c7", "#2c1c04"),
+            border_width=1,
+            border_color=("#f59e0b", "#d97706"),
+            corner_radius=8,
+            height=40
+        )
+        banner.pack(before=self.middle_container, fill="x", pady=(0, 8), padx=2)
+        self.companion_banner_frame = banner
+
+        content_row = ctk.CTkFrame(banner, fg_color="transparent")
+        content_row.pack(fill="x", padx=10, pady=6)
+
+        warn_lbl = ctk.CTkLabel(
+            content_row,
+            text="⚠️ Antigravity Tools is not installed. Please install it or configure its path to ensure full tool synchronization.",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=("#92400e", "#fde68a"),
+            anchor="w"
+        )
+        warn_lbl.pack(side="left", fill="x", expand=True, padx=(4, 8))
+
+        config_btn = ctk.CTkButton(
+            content_row,
+            text="⚙ Configure Path",
+            width=110,
+            height=26,
+            corner_radius=5,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=("#d97706", "#b45309"),
+            hover_color=("#b45309", "#92400e"),
+            text_color="#ffffff",
+            command=self._open_settings_dialog
+        )
+        config_btn.pack(side="right", padx=(6, 0))
+
+        dismiss_btn = ctk.CTkButton(
+            content_row,
+            text="✕",
+            width=26,
+            height=26,
+            corner_radius=5,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="transparent",
+            hover_color=("#fde68a", "#451a03"),
+            text_color=("#92400e", "#fde68a"),
+            command=self._dismiss_companion_warning_banner
+        )
+        dismiss_btn.pack(side="right", padx=(4, 0))
+
+    def _dismiss_companion_warning_banner(self):
+        """Dismisses the missing companion tool warning banner."""
+        if self.companion_banner_frame and self.companion_banner_frame.winfo_exists():
+            try:
+                self.companion_banner_frame.destroy()
+            except Exception:
+                pass
+        self.companion_banner_frame = None
+
     def _safe_after(self, delay_ms: int, func, *args):
         """Safely schedules a Tkinter .after callback only if the window exists and is not destroyed."""
         try:
@@ -1861,6 +1975,185 @@ class GeminiTokenCounterApp(ctk.CTk):
             justify="left"
         ).pack(anchor="w", padx=10, pady=(0, 8))
 
+        # ---------------- Section 5: Companion Tools (Antigravity Tools) ----------------
+        sec5_frame = ctk.CTkFrame(
+            scroll_container,
+            corner_radius=10,
+            fg_color=("#f8fafc", "#1e222d"),
+            border_width=1,
+            border_color=("#e2e8f0", "#2a3040")
+        )
+        sec5_frame.pack(fill="x", pady=(0, 14), padx=2)
+
+        ctk.CTkLabel(
+            sec5_frame,
+            text="🚀 COMPANION TOOLS (ANTIGRAVITY TOOLS)",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=("#475569", "#94a3b8")
+        ).pack(anchor="w", padx=14, pady=(10, 4))
+
+        from core.companion import (
+            get_antigravity_tools_status,
+            get_default_antigravity_tools_path,
+            launch_antigravity_tools,
+            is_antigravity_tools_running,
+            resolve_antigravity_tools_path
+        )
+
+        auto_launch_companion_var = ctk.BooleanVar(value=bool(config.get("auto_launch_antigravity_tools", True)))
+        auto_launch_companion_cb = ctk.CTkCheckBox(
+            sec5_frame,
+            text="Auto-launch Antigravity Tools companion app when monitor starts",
+            variable=auto_launch_companion_var,
+            onvalue=True,
+            offvalue=False,
+            font=ctk.CTkFont(size=12),
+            text_color=("#0f172a", "#f8fafc")
+        )
+        if auto_launch_companion_var.get():
+            auto_launch_companion_cb.select()
+        else:
+            auto_launch_companion_cb.deselect()
+        auto_launch_companion_cb.pack(anchor="w", padx=14, pady=(2, 8))
+
+        # Status Box & Quick Launch
+        status_box = ctk.CTkFrame(sec5_frame, corner_radius=6, fg_color=("white", "#161b26"), border_width=1, border_color=("#e2e8f0", "#232936"))
+        status_box.pack(fill="x", padx=14, pady=(0, 10))
+
+        status_row = ctk.CTkFrame(status_box, fg_color="transparent")
+        status_row.pack(fill="x", padx=10, pady=8)
+
+        status_badge_lbl = ctk.CTkLabel(
+            status_row,
+            text=" Checking status... ",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            corner_radius=4,
+            height=24,
+            padx=8
+        )
+        status_badge_lbl.pack(side="left")
+
+        def _update_status_display(custom_p=None):
+            path_val = custom_p if custom_p is not None else companion_path_entry.get().strip()
+            st = get_antigravity_tools_status(path_val if path_val else None)
+            if st["running"]:
+                pid_info = f" (PID: {st['pid']})" if st.get("pid") else ""
+                status_badge_lbl.configure(
+                    text=f" 🟢 Running{pid_info} ",
+                    text_color="#ffffff",
+                    fg_color="#10b981"
+                )
+                launch_btn.configure(state="disabled", text="Running", fg_color="#10b981")
+            elif st["installed"]:
+                status_badge_lbl.configure(
+                    text=" ⚪ Not Running (Installed) ",
+                    text_color="#ffffff",
+                    fg_color="#64748b"
+                )
+                launch_btn.configure(state="normal", text="▶ Launch Now", fg_color="#3b82f6")
+            else:
+                status_badge_lbl.configure(
+                    text=" ⚠️ Not Installed / Not Found ",
+                    text_color="#ffffff",
+                    fg_color="#ef4444"
+                )
+                launch_btn.configure(state="disabled", text="Not Found", fg_color="#64748b")
+
+        def _on_manual_launch():
+            path_val = companion_path_entry.get().strip()
+            launch_antigravity_tools(path_val if path_val else None, force=True)
+            self._safe_after(500, _update_status_display)
+
+        launch_btn = ctk.CTkButton(
+            status_row,
+            text="▶ Launch Now",
+            width=100,
+            height=26,
+            corner_radius=5,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#3b82f6",
+            hover_color="#2563eb",
+            command=_on_manual_launch
+        )
+        launch_btn.pack(side="right")
+
+        # Custom Path Input Row
+        ctk.CTkLabel(
+            sec5_frame,
+            text="Executable Path (Leave blank to use default location):",
+            font=ctk.CTkFont(size=11),
+            text_color=("#475569", "#94a3b8")
+        ).pack(anchor="w", padx=14, pady=(0, 2))
+
+        path_input_row = ctk.CTkFrame(sec5_frame, fg_color="transparent")
+        path_input_row.pack(fill="x", padx=14, pady=(0, 4))
+
+        companion_path_entry = ctk.CTkEntry(
+            path_input_row,
+            placeholder_text=str(get_default_antigravity_tools_path()),
+            height=30,
+            fg_color=("white", "#161b26"),
+            border_color=("#cbd5e1", "#2d3748"),
+            text_color=("#0f172a", "#f8fafc")
+        )
+        saved_comp_path = str(config.get("antigravity_tools_path") or "")
+        if saved_comp_path:
+            companion_path_entry.insert(0, saved_comp_path)
+        companion_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        companion_path_entry.bind("<KeyRelease>", lambda e: _update_status_display())
+
+        def _browse_companion_exe():
+            chosen = filedialog.askopenfilename(
+                title="Select antigravity-tools.exe",
+                filetypes=[("Executable Files", "*.exe"), ("All Files", "*.*")],
+                parent=dialog
+            )
+            if chosen:
+                companion_path_entry.delete(0, "end")
+                companion_path_entry.insert(0, chosen)
+                _update_status_display(chosen)
+
+        browse_comp_btn = ctk.CTkButton(
+            path_input_row,
+            text="📁 Browse",
+            width=75,
+            height=30,
+            corner_radius=6,
+            fg_color=("#e2e8f0", "#283042"),
+            hover_color=("#cbd5e1", "#3B82F6"),
+            text_color=("#0f172a", "#f8fafc"),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=_browse_companion_exe
+        )
+        browse_comp_btn.pack(side="left", padx=(0, 4))
+
+        def _auto_detect_companion():
+            companion_path_entry.delete(0, "end")
+            _update_status_display("")
+
+        autodetect_btn = ctk.CTkButton(
+            path_input_row,
+            text="🔄 Detect",
+            width=70,
+            height=30,
+            corner_radius=6,
+            fg_color=("#e2e8f0", "#283042"),
+            hover_color=("#cbd5e1", "#3B82F6"),
+            text_color=("#0f172a", "#f8fafc"),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=_auto_detect_companion
+        )
+        autodetect_btn.pack(side="left")
+
+        ctk.CTkLabel(
+            sec5_frame,
+            text=f"Default: {get_default_antigravity_tools_path()}",
+            font=ctk.CTkFont(size=10),
+            text_color=("#64748b", "#94a3b8")
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        _update_status_display()
+
         # ---------------- Save Button ----------------
         def _save_settings():
             try:
@@ -1888,7 +2181,11 @@ class GeminiTokenCounterApp(ctk.CTk):
                 config.set("hud_show_io", bool(hud_io_var.get()), save_now=False)
                 config.set("hud_show_progress", bool(hud_prog_var.get()), save_now=False)
                 config.set("hud_minimized", bool(hud_mini_var.get()), save_now=False)
-                config.set("mini_hud_opacity", round(op_slider.get(), 2), save_now=True)
+                config.set("mini_hud_opacity", round(op_slider.get(), 2), save_now=False)
+
+                # Save companion app options
+                config.set("auto_launch_antigravity_tools", bool(auto_launch_companion_var.get()), save_now=False)
+                config.set("antigravity_tools_path", str(companion_path_entry.get()).strip(), save_now=True)
 
                 # Only redraw theme if actually changed
                 if new_theme != old_theme:
@@ -1918,6 +2215,13 @@ class GeminiTokenCounterApp(ctk.CTk):
 
                 # Trigger background refresh without blocking
                 self.watcher.force_refresh()
+
+                # Update warning banner visibility if auto-launch or path changed (never auto-launch here)
+                from core.companion import is_antigravity_tools_installed
+                if not bool(config.get("auto_launch_antigravity_tools", True)) or is_antigravity_tools_installed():
+                    self._dismiss_companion_warning_banner()
+                else:
+                    self._show_companion_warning_banner()
             except ValueError:
                 pass
 

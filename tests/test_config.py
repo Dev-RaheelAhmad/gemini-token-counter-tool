@@ -43,7 +43,7 @@ class TestConfig(unittest.TestCase):
             self.assertFalse(cm.get("show_manual_limits"))
             self.assertTrue(cm.get("active_sessions_only"))
             self.assertEqual(cm.get("mini_hud_opacity"), 1.0)
-            self.assertEqual(cm.get("config_version"), 14)
+            self.assertEqual(cm.get("config_version"), 15)
         finally:
             tmp.close()
             try:
@@ -52,7 +52,7 @@ class TestConfig(unittest.TestCase):
                 pass
 
     def test_v3_migration(self):
-        # Test that v2 config migrates active_sessions_only and updates to v14
+        # Test that v2 config migrates active_sessions_only and updates to v15
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         try:
             with open(tmp.name, "w", encoding="utf-8") as f:
@@ -61,7 +61,7 @@ class TestConfig(unittest.TestCase):
             cm.config_path = Path(tmp.name)
             cm.load()
             self.assertTrue(cm.get("active_sessions_only"))
-            self.assertEqual(cm.get("config_version"), 14)
+            self.assertEqual(cm.get("config_version"), 15)
         finally:
             tmp.close()
             try:
@@ -70,7 +70,7 @@ class TestConfig(unittest.TestCase):
                 pass
 
     def test_v4_migration(self):
-        # Test that v3 config migrates show_manual_limits to False and updates to v14
+        # Test that v3 config migrates show_manual_limits to False and updates to v15
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         try:
             with open(tmp.name, "w", encoding="utf-8") as f:
@@ -79,7 +79,7 @@ class TestConfig(unittest.TestCase):
             cm.config_path = Path(tmp.name)
             cm.load()
             self.assertFalse(cm.get("show_manual_limits"))
-            self.assertEqual(cm.get("config_version"), 14)
+            self.assertEqual(cm.get("config_version"), 15)
         finally:
             tmp.close()
             try:
@@ -88,7 +88,7 @@ class TestConfig(unittest.TestCase):
                 pass
 
     def test_v5_migration(self):
-        # Test that v4 config migrates show_manual_limits to False and updates to v14
+        # Test that v4 config migrates show_manual_limits to False and updates to v15
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         try:
             with open(tmp.name, "w", encoding="utf-8") as f:
@@ -97,7 +97,7 @@ class TestConfig(unittest.TestCase):
             cm.config_path = Path(tmp.name)
             cm.load()
             self.assertFalse(cm.get("show_manual_limits"))
-            self.assertEqual(cm.get("config_version"), 14)
+            self.assertEqual(cm.get("config_version"), 15)
         finally:
             tmp.close()
             try:
@@ -106,7 +106,7 @@ class TestConfig(unittest.TestCase):
                 pass
 
     def test_v14_migration(self):
-        # Test that v13 config resets geometries and updates to v14
+        # Test that v13 config resets geometries and updates to v15
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         try:
             with open(tmp.name, "w", encoding="utf-8") as f:
@@ -119,7 +119,26 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(cm.get("window_geometry"), "")
             self.assertEqual(cm.get("mini_hud_bubble_geometry"), "")
             self.assertEqual(cm.get("mini_hud_geometry"), "")
-            self.assertEqual(cm.get("config_version"), 14)
+            self.assertEqual(cm.get("config_version"), 15)
+        finally:
+            tmp.close()
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+
+    def test_v15_migration(self):
+        # Test that v14 config adds auto_launch_antigravity_tools and antigravity_tools_path
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        try:
+            with open(tmp.name, "w", encoding="utf-8") as f:
+                json.dump({"config_version": 14}, f)
+            cm = ConfigManager()
+            cm.config_path = Path(tmp.name)
+            cm.load()
+            self.assertTrue(cm.get("auto_launch_antigravity_tools"))
+            self.assertEqual(cm.get("antigravity_tools_path"), "")
+            self.assertEqual(cm.get("config_version"), 15)
         finally:
             tmp.close()
             try:
@@ -170,7 +189,7 @@ class TestConfig(unittest.TestCase):
             # load() handles JSONDecodeError gracefully
             data = cm.load()
             self.assertIsInstance(data, dict)
-            self.assertEqual(data.get("config_version"), 14)
+            self.assertEqual(data.get("config_version"), 15)
 
 
 if __name__ == "__main__":

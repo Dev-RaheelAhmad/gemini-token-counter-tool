@@ -10,7 +10,7 @@ DEFAULT_ACTIVE_SESSIONS_ONLY_5H: bool = True     # 5-Hour view scope (Active Cha
 DEFAULT_ACTIVE_SESSIONS_ONLY_7D: bool = False    # 7-Day view scope (All Chats)
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "config_version": 14,
+    "config_version": 15,
     "limit_5h": 1000000,
     "limit_7d": 4000000,
     "show_manual_limits": False,
@@ -37,6 +37,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "selected_account": "active",
     "active_sessions_only": DEFAULT_ACTIVE_SESSIONS_ONLY,
     "dashboard_timeframe": "5h",
+    "auto_launch_antigravity_tools": True,
+    "antigravity_tools_path": "",
 }
 
 
@@ -183,6 +185,13 @@ class ConfigManager:
                             self.data["mini_hud_bubble_geometry"] = ""
                             self.data["mini_hud_geometry"] = ""
                             self.data["config_version"] = 14
+                            save_needed = True
+                        if ver < 15:
+                            if "auto_launch_antigravity_tools" not in self.data:
+                                self.data["auto_launch_antigravity_tools"] = True
+                            if "antigravity_tools_path" not in self.data:
+                                self.data["antigravity_tools_path"] = ""
+                            self.data["config_version"] = 15
                             save_needed = True
                             
                         if save_needed:
