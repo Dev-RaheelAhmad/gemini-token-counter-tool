@@ -145,26 +145,41 @@ def parse_transcript_file_cached(file_path: Any) -> Tuple[Dict[str, int], List[T
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             if cached_offset > 0:
                 f.seek(cached_offset)
-            for line in f:
+            while True:
+                line_start = f.tell()
+                line = f.readline()
+                if not line:
+                    new_offset = line_start
+                    break
+                ends_with_newline = line.endswith("\n")
                 line_str = line.strip()
                 if not line_str:
+                    new_offset = f.tell()
                     continue
                 try:
                     data = json.loads(line_str)
-                    if isinstance(data, dict):
-                        if not delta_first_prompt:
-                            fp = extract_first_prompt(data)
-                            if fp:
-                                delta_first_prompt = fp
-                        ts = parse_iso_time(data.get("created_at"))
-                        p, th, c = extract_line_tokens(data)
-                        delta_stats["prompt"] += p
-                        delta_stats["thinking"] += th
-                        delta_stats["candidates"] += c
-                        delta_records.append((ts, p, th, c))
+                    is_record = isinstance(data, dict)
                 except json.JSONDecodeError:
-                    continue
-            new_offset = f.tell()
+                    is_record = False
+                if not ends_with_newline and not is_record:
+                    # Trailing partial line (writer mid-append): do not advance
+                    # past it; retry from its start on the next poll.
+                    new_offset = line_start
+                    break
+                new_offset = f.tell()
+                if is_record:
+                    if not delta_first_prompt:
+                        fp = extract_first_prompt(data)
+                        if fp:
+                            delta_first_prompt = fp
+                    ts = parse_iso_time(data.get("created_at"))
+                    if ts is not None and ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    p, th, c = extract_line_tokens(data)
+                    delta_stats["prompt"] += p
+                    delta_stats["thinking"] += th
+                    delta_stats["candidates"] += c
+                    delta_records.append((ts, p, th, c))
             read_ok = True
     except Exception:
         pass
@@ -197,7 +212,16 @@ def calculate_window_tracker(line_records: List[Tuple[Optional[datetime], int, i
 
     from datetime import timedelta
     cutoff = now - timedelta(days=7, hours=1)
-    line_records = [r for r in line_records if r[0] is None or r[0] >= cutoff]
+    filtered_records = []
+    for r in line_records:
+        ts = r[0]
+        if ts is None:
+            filtered_records.append(r)
+        else:
+            ts_utc = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            if ts_utc >= cutoff:
+                filtered_records.append((ts_utc, r[1], r[2], r[3]))
+    line_records = filtered_records
 
     window_tracker = {
         "tokens_5h": 0,
