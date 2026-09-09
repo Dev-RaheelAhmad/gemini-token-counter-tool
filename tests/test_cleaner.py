@@ -219,7 +219,7 @@ class TestCleaner(unittest.TestCase):
             b_dir = Path(tmpdir) / "brain"
             b_dir.mkdir()
             with patch("core.cleaner.find_all_brain_dirs", return_value=[b_dir]):
-                with patch("subprocess.Popen") if os.name == "nt" else patch("os.system"):
+                with patch("os.startfile", create=True), patch("subprocess.Popen"):
                     ok, msg = open_storage_folder()
                     self.assertTrue(ok)
                     self.assertIn(str(b_dir), msg)

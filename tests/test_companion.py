@@ -33,7 +33,7 @@ class TestCompanionApp(unittest.TestCase):
     def test_default_path_resolution_localappdata(self):
         with patch.dict(os.environ, {"LOCALAPPDATA": r"C:\MockAppData\Local"}):
             p = get_default_antigravity_tools_path()
-            self.assertEqual(str(p), r"C:\MockAppData\Local\Antigravity Tools\antigravity-tools.exe")
+            self.assertEqual(str(p).replace("/", "\\"), r"C:\MockAppData\Local\Antigravity Tools\antigravity-tools.exe")
 
     def test_default_path_resolution_userprofile_fallback(self):
         env = dict(os.environ)
@@ -41,7 +41,7 @@ class TestCompanionApp(unittest.TestCase):
         env["USERPROFILE"] = r"C:\MockUser"
         with patch.dict(os.environ, env, clear=True):
             p = get_default_antigravity_tools_path()
-            self.assertEqual(str(p), r"C:\MockUser\AppData\Local\Antigravity Tools\antigravity-tools.exe")
+            self.assertEqual(str(p).replace("/", "\\"), r"C:\MockUser\AppData\Local\Antigravity Tools\antigravity-tools.exe")
 
     def test_resolve_custom_path_argument(self):
         with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as tmp:

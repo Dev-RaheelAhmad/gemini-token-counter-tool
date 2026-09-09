@@ -141,8 +141,9 @@ class TestAdditionalCoverage(unittest.TestCase):
             self.assertIn("deleted_count", res_prev)
 
         # Storage folder finder
-        ok, msg = open_storage_folder()
-        self.assertIsInstance(ok, bool)
+        with patch("os.startfile", create=True), patch("subprocess.Popen"):
+            ok, msg = open_storage_folder()
+            self.assertIsInstance(ok, bool)
 
     def test_engine_cached_and_reports(self):
         with tempfile.TemporaryDirectory() as tmpdir:

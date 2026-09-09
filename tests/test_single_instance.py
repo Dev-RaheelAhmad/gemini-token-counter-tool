@@ -78,16 +78,17 @@ class TestSingleInstance(unittest.TestCase):
                 mgr1.release()
 
     def test_activate_existing_window_windows(self):
+        import ctypes
         mgr = SingleInstanceManager(app_name="test-win-activate")
+        mock_user32 = MagicMock()
+        mock_user32.FindWindowW.return_value = 12345
         with patch("sys.platform", "win32"), \
-             patch("ctypes.windll.user32.FindWindowW", return_value=12345) as mock_find, \
-             patch("ctypes.windll.user32.ShowWindow") as mock_show, \
-             patch("ctypes.windll.user32.SetForegroundWindow") as mock_foreground:
-
+             patch.object(ctypes, "windll", create=True) as mock_windll:
+            mock_windll.user32 = mock_user32
             mgr._activate_existing_window()
-            mock_find.assert_called_once_with(None, "Gemini Token Counter - Desktop Monitor")
-            mock_show.assert_called_once_with(12345, 9)
-            mock_foreground.assert_called_once_with(12345)
+            mock_user32.FindWindowW.assert_called_once_with(None, "Gemini Token Counter - Desktop Monitor")
+            mock_user32.ShowWindow.assert_called_once_with(12345, 9)
+            mock_user32.SetForegroundWindow.assert_called_once_with(12345)
 
     def test_idempotent_release(self):
         mgr = SingleInstanceManager(app_name="test-idempotent-release")
