@@ -20,6 +20,7 @@ from tests import (
     test_session_finder,
     test_cli,
     test_companion,
+    test_single_instance,
 )
 
 MODULES = [
@@ -34,6 +35,7 @@ MODULES = [
     test_session_finder,
     test_cli,
     test_companion,
+    test_single_instance,
 ]
 
 

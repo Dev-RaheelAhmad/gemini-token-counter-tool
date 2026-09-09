@@ -2317,5 +2317,10 @@ class GeminiTokenCounterApp(ctk.CTk):
             pass
         self.watcher.stop()
         self.tray.stop()
+        if hasattr(self, "single_instance") and self.single_instance:
+            try:
+                self.single_instance.release()
+            except Exception:
+                pass
         self.destroy()
         sys.exit(0)
