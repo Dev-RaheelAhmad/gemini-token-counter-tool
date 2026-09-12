@@ -76,3 +76,43 @@ When sub-agents are useful, automatically create the appropriate specialized cod
 3. **Expected Output**
 
 Choose the sub-agents dynamically based on the task requirements and complexity.
+
+## 🔍 Autonomous Coding Standard: Defensive Error Handling & 1-Click Traceability (CRITICAL)
+
+When generating code, creating services, writing controllers, defining domain models, implementing queue jobs, executing artisan commands, or handling UI mutations (Filament / Livewire / Blade), you must proactively apply defensive error handling and direct 1-click traceability across all architectural layers. Every module, service, and business logic execution must implement strict, granular error handling to guarantee that any failure is immediately identifiable, traceable, and resolvable.
+
+### 1. Exception Architecture & Throwing Standards
+- **Strict Ban on Raw Exceptions**: Never throw raw `\Exception`, `\RuntimeException`, or generic `\Error`. Every exception must communicate domain intent.
+- **Typed Domain Exceptions**: Always throw or wrap into domain-specific exceptions extending the base `App\Exceptions\DomainException` (or relevant framework domain bases).
+- **Static Factory Constructors**: Exclusively instantiate domain exceptions via descriptive static factory methods (e.g., `ClassNameException::invalidTransition(...)`, `::thresholdExceeded(...)`, `::recordNotFound(...)`). Static factories must encapsulate:
+  - Failing entity / model context (IDs, states, types)
+  - Attempted vs. expected / permitted values
+  - Actionable remediation advice for callers, operators, or end users
+- **Deterministic Context Tagging Pattern**:
+  Format every exception message with an explicit caller context prefix:
+  `"[<ClassName>:<methodName>] <Clear explanation of failure>. Attempted value: [<val>], Allowed/Expected: [<allowed>]."`
+- **Mandatory Exception Metadata**:
+  Always populate:
+  - `error_code`: Unique uppercase snake_case identifier (e.g., `WORKFLOW_INVALID_TRANSITION`, `INSUFFICIENT_STOCK`).
+  - `details`: Associative array of runtime parameters, entity IDs, attempted action, and violated constraints.
+  - `remediation`: Concrete remediation guidance guiding operators or developers on how to resolve the error.
+  - `http_status`: Accurate HTTP status code (e.g., 400, 403, 404, 409, 422).
+- **Root-Cause Exception Chaining**:
+  When catching lower-level exceptions (e.g., `QueryException`, `GuzzleException`, `JsonException`), always preserve the root cause via the `$previous` parameter (`?Throwable $previous = null`) so full telemetry is preserved.
+
+### 2. Catch Blocks, Resilience & Observability Standards
+- **Zero-Swallowing Policy**:
+  Suppressing exceptions without diagnostics or silently returning `null`, `false`, or empty fallback collections on critical business mutations is strictly forbidden. Never write empty `catch` blocks.
+- **Selective & Scope-Specific Catching**:
+  Catch specific exception types rather than broad catch-all `\Throwable` or `\Exception` blocks. If an outer boundary (middleware, global exception handler, queue worker, console command) catches `\Throwable` as a safety net, it must capture full diagnostics and never swallow failures silently.
+- **Correlation Trace Context & Structured Logging**:
+  Always log failures at `ERROR` or `CRITICAL` severity using `TraceContext::buildContext(...)`. This automatically attaches the correlation `trace_id`, `actor_id`, `tenant_id`, and `timestamp`:
+  ```php
+  Log::error("[ClassName:methodName] Failed to execute action: {$e->getMessage()}", TraceContext::buildContext([
+      'entity_id'   => $entity->id ?? null,
+      'action'      => '<action_name>',
+      'payload'     => $payload ?? [],
+      'stack_trace' => $e->getTraceAsString(),
+  ]));
+  ```
+
