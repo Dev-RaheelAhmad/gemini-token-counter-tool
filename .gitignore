@@ -45,7 +45,8 @@ jetski-standalone-oauth-token
 # Graphify & internal agent tools
 graphify-out/
 core/graphify-out/
-.agents/
+.agents/*
+!.agents/rules/
 task.md
 tasks.md
 **/task.md
