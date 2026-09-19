@@ -2,7 +2,12 @@ import customtkinter as ctk
 from typing import Callable, Optional, Dict, Any, Tuple
 from core.config import config
 from core.account_manager import get_active_google_account
-from gui.window_utils import get_screen_work_area, get_window_scale
+from gui.window_utils import (
+    get_screen_work_area,
+    get_window_scale,
+    get_active_token_color_5h,
+    get_active_token_color_7d,
+)
 
 
 class MiniHUDContextMenu(ctk.CTkToplevel):
@@ -767,11 +772,12 @@ class MiniHUD(ctk.CTkToplevel):
         )
         h5_hdr.pack(fill="x", padx=8, pady=(1, 0), anchor="w")
 
+        col_5h_act = get_active_token_color_5h(used_5h_act)
         h5_act = ctk.CTkLabel(
             container,
             text=f"  ⚡ Active: {used_5h_act:,} tok  (📥 {_fmt(prompt_5h_act)} • 🧠 {_fmt(think_5h_act)} • 📤 {_fmt(cand_5h_act)})",
             font=ctk.CTkFont(size=11),
-            text_color=("#1d4ed8", "#60a5fa"),
+            text_color=col_5h_act,
             anchor="w",
             justify="left"
         )
@@ -809,11 +815,12 @@ class MiniHUD(ctk.CTkToplevel):
         )
         d7_hdr.pack(fill="x", padx=8, pady=(1, 0), anchor="w")
 
+        col_7d_act = get_active_token_color_7d(used_7d_act)
         d7_act = ctk.CTkLabel(
             container,
             text=f"  ⚡ Active: {used_7d_act:,} tok  (📥 {_fmt(prompt_7d_act)} • 🧠 {_fmt(think_7d_act)} • 📤 {_fmt(cand_7d_act)})",
             font=ctk.CTkFont(size=11),
-            text_color=("#7c3aed", "#c084fc"),
+            text_color=col_7d_act,
             anchor="w",
             justify="left"
         )
@@ -1749,7 +1756,8 @@ class MiniHUD(ctk.CTkToplevel):
             is_rt = all_rep.get("is_realtime_quota", False)
 
             if hasattr(self, "h5_active_lbl"):
-                self.h5_active_lbl.configure(text=f"⚡ Active: {used_5h_act:,} tok")
+                col_5h_act = get_active_token_color_5h(used_5h_act)
+                self.h5_active_lbl.configure(text=f"⚡ Active: {used_5h_act:,} tok", text_color=col_5h_act)
             if hasattr(self, "h5_active_breakdown_lbl"):
                 self.h5_active_breakdown_lbl.configure(text=f"📥 {_fmt(prompt_5h_act)} • 🧠 {_fmt(think_5h_act)} • 📤 {_fmt(cand_5h_act)}")
                 
@@ -1808,7 +1816,8 @@ class MiniHUD(ctk.CTkToplevel):
             reset_7d = all_rep.get("reset_7d_str", "Reset")
 
             if hasattr(self, "h7_active_lbl"):
-                self.h7_active_lbl.configure(text=f"⚡ Active: {used_7d_act:,} tok")
+                col_7d_act = get_active_token_color_7d(used_7d_act)
+                self.h7_active_lbl.configure(text=f"⚡ Active: {used_7d_act:,} tok", text_color=col_7d_act)
             if hasattr(self, "h7_active_breakdown_lbl"):
                 self.h7_active_breakdown_lbl.configure(text=f"📥 {_fmt(prompt_7d_act)} • 🧠 {_fmt(think_7d_act)} • 📤 {_fmt(cand_7d_act)}")
                 
@@ -1869,7 +1878,8 @@ class MiniHUD(ctk.CTkToplevel):
             else:
                 c5 = ("#dc2626", "#f87171")
 
-            self.bubble_5h_act_lbl.configure(text=f"{_fmt_bubble(used_5h_act_b)}", text_color=("#1d4ed8", "#60a5fa"))
+            col_5h_act_b = get_active_token_color_5h(used_5h_act_b)
+            self.bubble_5h_act_lbl.configure(text=f"{_fmt_bubble(used_5h_act_b)}", text_color=col_5h_act_b)
             self.bubble_5h_all_lbl.configure(text=f"{_fmt_bubble(used_5h_all_b)}", text_color=c5)
             if hasattr(self, "bubble_5h_pct_lbl"):
                 self.bubble_5h_pct_lbl.configure(text=p5_txt, text_color=c5)
@@ -1882,7 +1892,8 @@ class MiniHUD(ctk.CTkToplevel):
             else:
                 c7 = ("#dc2626", "#f87171")
 
-            self.bubble_7d_act_lbl.configure(text=f"{_fmt_bubble(used_7d_act_b)}", text_color=("#7c3aed", "#c084fc"))
+            col_7d_act_b = get_active_token_color_7d(used_7d_act_b)
+            self.bubble_7d_act_lbl.configure(text=f"{_fmt_bubble(used_7d_act_b)}", text_color=col_7d_act_b)
             self.bubble_7d_all_lbl.configure(text=f"{_fmt_bubble(used_7d_all_b)}", text_color=c7)
             if hasattr(self, "bubble_7d_pct_lbl"):
                 self.bubble_7d_pct_lbl.configure(text=p7_txt, text_color=c7)

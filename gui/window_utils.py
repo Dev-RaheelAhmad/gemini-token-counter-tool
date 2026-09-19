@@ -164,3 +164,33 @@ def cancel_all_pending_after_events(window):
     except Exception:
         pass
 
+
+def get_active_token_color_5h(tokens: int) -> Tuple[str, str]:
+    """
+    Returns (light_mode_color, dark_mode_color) for 5-hour active token consumption:
+    - 0 to 400,000 tokens: Green ("#059669", "#34d399")
+    - 400,001 to 800,000 tokens: Orange/Amber ("#d97706", "#fbbf24")
+    - > 800,000 tokens: Red ("#dc2626", "#f87171")
+    """
+    if tokens <= 400_000:
+        return ("#059669", "#34d399")
+    elif tokens <= 800_000:
+        return ("#d97706", "#fbbf24")
+    else:
+        return ("#dc2626", "#f87171")
+
+
+def get_active_token_color_7d(tokens: int) -> Tuple[str, str]:
+    """
+    Returns (light_mode_color, dark_mode_color) for 7-day active token consumption:
+    - 0 to 4,000,000 tokens: Green ("#059669", "#34d399")
+    - 4,000,001 to 8,000,000 tokens: Orange/Amber ("#d97706", "#fbbf24")
+    - > 8,000,000 tokens: Red ("#dc2626", "#f87171")
+    """
+    if tokens <= 4_000_000:
+        return ("#059669", "#34d399")
+    elif tokens <= 8_000_000:
+        return ("#d97706", "#fbbf24")
+    else:
+        return ("#dc2626", "#f87171")
+

@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from typing import Optional
 from core.config import config
+from gui.window_utils import get_active_token_color_5h, get_active_token_color_7d
 
 
 class QuotaGauge(ctk.CTkFrame):
@@ -17,6 +18,7 @@ class QuotaGauge(ctk.CTkFrame):
         default_limit: int = 1000000,
         active_color: Optional[tuple] = None,
         all_color: Optional[tuple] = None,
+        window_type: str = "5h",
         **kwargs
     ):
         super().__init__(
@@ -30,6 +32,10 @@ class QuotaGauge(ctk.CTkFrame):
         self.limit = default_limit
         self.active_color = active_color if active_color is not None else ("#1d4ed8", "#38bdf8")
         self.all_color = all_color if all_color is not None else ("#1d4ed8", "#38bdf8")
+        if window_type == "5h" and ("7-day" in title.lower() or "7d" in title.lower()):
+            self.window_type = "7d"
+        else:
+            self.window_type = window_type
 
         # Top Content Frame
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -251,8 +257,16 @@ class QuotaGauge(ctk.CTkFrame):
         def _fmt(val: int) -> str:
             return f"{val:,}"
 
+        # Update dynamic active token burn color
+        if getattr(self, "window_type", "5h") == "7d":
+            act_color = get_active_token_color_7d(active_total_toks)
+        else:
+            act_color = get_active_token_color_5h(active_total_toks)
+
         # Update top prominent big numbers
-        self.lbl_big_active_val.configure(text=f"{active_total_toks:,}")
+        self.lbl_big_active_val.configure(text=f"{active_total_toks:,}", text_color=act_color)
+        self.lbl_big_active_icon.configure(text_color=act_color)
+        self.lbl_act_tag.configure(text_color=act_color)
         self.lbl_big_all_val.configure(text=f"{all_total_toks:,}")
 
         # Update breakdown rows (without trailing totals)

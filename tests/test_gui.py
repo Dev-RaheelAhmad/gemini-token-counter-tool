@@ -1718,26 +1718,29 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
             self.assertEqual(gauge_7d.lbl_all_tag.cget("text_color"), ("#7c3aed", "#a78bfa"))
 
             # 5H Green (>60% remaining)
-            gauge_5h.update_data(used_tokens=50000, reset_str="in 4h", pct_remaining=80.0, all_total_toks=50000)
+            gauge_5h.update_data(used_tokens=50000, reset_str="in 4h", pct_remaining=80.0, all_total_toks=50000, active_total_toks=50000)
             self.assertEqual(gauge_5h.lbl_big_all_val.cget("text_color"), ("#15803d", "#10B981"))
+            self.assertEqual(gauge_5h.lbl_big_active_val.cget("text_color"), ("#059669", "#34d399"))
 
             # 5H Amber (20%-60% remaining)
-            gauge_5h.update_data(used_tokens=300000, reset_str="in 2h", pct_remaining=40.0, all_total_toks=30000)
+            gauge_5h.update_data(used_tokens=500000, reset_str="in 2h", pct_remaining=40.0, all_total_toks=500000, active_total_toks=500000)
             self.assertEqual(gauge_5h.lbl_big_all_val.cget("text_color"), ("#b45309", "#F59E0B"))
+            self.assertEqual(gauge_5h.lbl_big_active_val.cget("text_color"), ("#d97706", "#fbbf24"))
 
             # 5H Red (<20% remaining)
-            gauge_5h.update_data(used_tokens=800000, reset_str="in 10m", pct_remaining=10.0, all_total_toks=80000)
+            gauge_5h.update_data(used_tokens=850000, reset_str="in 10m", pct_remaining=10.0, all_total_toks=850000, active_total_toks=850000)
             self.assertEqual(gauge_5h.lbl_big_all_val.cget("text_color"), ("#b91c1c", "#EF4444"))
+            self.assertEqual(gauge_5h.lbl_big_active_val.cget("text_color"), ("#dc2626", "#f87171"))
 
             # 2. Test MiniHUD colors
             hud = MiniHUD(root, on_restore_callback=lambda: None)
             hud.show_7d_expanded = True
             hud._build_sections()
 
-            # Active 7D label must be purple
+            # Active 7D label must be purple initially
             self.assertEqual(hud.h7_active_lbl.cget("text_color"), ("#7c3aed", "#c084fc"))
 
-            # Green quota
+            # Green quota & active
             hud.update_data({
                 "tokens_5h": 50000, "pct_5h_remaining": 75.0, "reset_5h_str": "in 3h",
                 "tokens_7d": 200000, "pct_7d_remaining": 85.0, "reset_7d_str": "in 5d",
@@ -1745,36 +1748,42 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
             })
             self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#15803d", "#10B981"))
             self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#15803d", "#10B981"))
-            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#1d4ed8", "#60a5fa"))
-            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#7c3aed", "#c084fc"))
+            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#059669", "#34d399"))
+            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#059669", "#34d399"))
             self.assertEqual(hud.bubble_5h_all_lbl.cget("text_color"), ("#059669", "#34d399"))
             self.assertEqual(hud.bubble_7d_all_lbl.cget("text_color"), ("#059669", "#34d399"))
+            self.assertEqual(hud.h5_active_lbl.cget("text_color"), ("#059669", "#34d399"))
+            self.assertEqual(hud.h7_active_lbl.cget("text_color"), ("#059669", "#34d399"))
 
-            # Amber quota
+            # Amber quota & active (5h: 500k in 400k-800k; 7d: 5M in 4M-8M)
             hud.update_data({
-                "tokens_5h": 400000, "pct_5h_remaining": 35.0, "reset_5h_str": "in 2h",
-                "tokens_7d": 1500000, "pct_7d_remaining": 30.0, "reset_7d_str": "in 2d",
+                "tokens_5h": 500000, "pct_5h_remaining": 35.0, "reset_5h_str": "in 2h",
+                "tokens_7d": 5000000, "pct_7d_remaining": 30.0, "reset_7d_str": "in 2d",
                 "burn_rate_str": "Idle"
             })
             self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#b45309", "#F59E0B"))
             self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#b45309", "#F59E0B"))
+            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
+            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
             self.assertEqual(hud.bubble_5h_all_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
             self.assertEqual(hud.bubble_7d_all_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
+            self.assertEqual(hud.h5_active_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
+            self.assertEqual(hud.h7_active_lbl.cget("text_color"), ("#d97706", "#fbbf24"))
 
-            # Red quota
+            # Red quota & active (5h: 900k > 800k; 7d: 9M > 8M)
             hud.update_data({
                 "tokens_5h": 900000, "pct_5h_remaining": 8.0, "reset_5h_str": "in 20m",
-                "tokens_7d": 3800000, "pct_7d_remaining": 5.0, "reset_7d_str": "in 4h",
+                "tokens_7d": 9000000, "pct_7d_remaining": 5.0, "reset_7d_str": "in 4h",
                 "burn_rate_str": "Idle"
             })
             self.assertEqual(hud.h5_all_lbl.cget("text_color"), ("#b91c1c", "#EF4444"))
             self.assertEqual(hud.h7_all_lbl.cget("text_color"), ("#b91c1c", "#EF4444"))
+            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#dc2626", "#f87171"))
+            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#dc2626", "#f87171"))
             self.assertEqual(hud.bubble_5h_all_lbl.cget("text_color"), ("#dc2626", "#f87171"))
             self.assertEqual(hud.bubble_7d_all_lbl.cget("text_color"), ("#dc2626", "#f87171"))
-
-            # Active bubble labels must remain untouched
-            self.assertEqual(hud.bubble_5h_act_lbl.cget("text_color"), ("#1d4ed8", "#60a5fa"))
-            self.assertEqual(hud.bubble_7d_act_lbl.cget("text_color"), ("#7c3aed", "#c084fc"))
+            self.assertEqual(hud.h5_active_lbl.cget("text_color"), ("#dc2626", "#f87171"))
+            self.assertEqual(hud.h7_active_lbl.cget("text_color"), ("#dc2626", "#f87171"))
 
             # 3. Test Tooltip content helper
             tooltip_frame = ctk.CTkFrame(root)
@@ -1783,6 +1792,10 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
             labels = [w for w in tooltip_frame.winfo_children() if isinstance(w, ctk.CTkLabel)]
             all_labels = [l for l in labels if "★ All:" in l.cget("text")]
             self.assertEqual(len(all_labels), 2)
+            act_labels = [l for l in labels if "⚡ Active:" in l.cget("text")]
+            self.assertEqual(len(act_labels), 2)
+            self.assertEqual(act_labels[0].cget("text_color"), ("#dc2626", "#f87171"))
+            self.assertEqual(act_labels[1].cget("text_color"), ("#dc2626", "#f87171"))
             # Both should have red quota color since last report was red (<20%)
             self.assertEqual(all_labels[0].cget("text_color"), ("#b91c1c", "#EF4444"))
             self.assertEqual(all_labels[1].cget("text_color"), ("#b91c1c", "#EF4444"))
@@ -1799,6 +1812,26 @@ class TestSessionPaginationAndSlicing(unittest.TestCase):
             tooltip_frame.destroy()
         finally:
             root.destroy()
+
+    def test_active_token_color_helpers(self):
+        """Tests get_active_token_color_5h and get_active_token_color_7d boundary cutoffs."""
+        from gui.window_utils import get_active_token_color_5h, get_active_token_color_7d
+
+        # 5H: 0-400k (Green), 400k-800k (Orange), >800k (Red)
+        self.assertEqual(get_active_token_color_5h(0), ("#059669", "#34d399"))
+        self.assertEqual(get_active_token_color_5h(400_000), ("#059669", "#34d399"))
+        self.assertEqual(get_active_token_color_5h(400_001), ("#d97706", "#fbbf24"))
+        self.assertEqual(get_active_token_color_5h(800_000), ("#d97706", "#fbbf24"))
+        self.assertEqual(get_active_token_color_5h(800_001), ("#dc2626", "#f87171"))
+        self.assertEqual(get_active_token_color_5h(1_000_000), ("#dc2626", "#f87171"))
+
+        # 7D: 0-4M (Green), 4M-8M (Orange), >8M (Red)
+        self.assertEqual(get_active_token_color_7d(0), ("#059669", "#34d399"))
+        self.assertEqual(get_active_token_color_7d(4_000_000), ("#059669", "#34d399"))
+        self.assertEqual(get_active_token_color_7d(4_000_001), ("#d97706", "#fbbf24"))
+        self.assertEqual(get_active_token_color_7d(8_000_000), ("#d97706", "#fbbf24"))
+        self.assertEqual(get_active_token_color_7d(8_000_001), ("#dc2626", "#f87171"))
+        self.assertEqual(get_active_token_color_7d(12_000_000), ("#dc2626", "#f87171"))
 
 
 class TestGuiDynamicAccountSwitching(unittest.TestCase):
