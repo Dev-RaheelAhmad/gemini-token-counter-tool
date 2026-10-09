@@ -8,13 +8,13 @@ These rules apply to all AI coding agents, assistants, and automated tools opera
 
 ## 2. Zero-Leak Confidentiality & Secrets Policy
 - **Never Hardcode Secrets**: Under NO circumstances should any API key, OAuth token, client secret, Bearer token, password, private key (`.pem`, `.key`, `.pfx`), or cloud service credential be added to source code, comments, documentation, or commit messages.
-- **Never Commit User Transcripts or State**: Never track, commit, or stage user `.jsonl` transcripts, local database files (`account_usage.json`, `account_ledger.jsonl`), `.env` files, or local config files. All user state must strictly reside in user-specific `%APPDATA%` / `$HOME` locations ignored by git.
+- **Never Commit User Transcripts or State**: Never track, commit, or stage user `.jsonl` transcripts, local database files (`account_usage.json`, `account_ledger.jsonl`), `.env` files, or local config files. All user state must strictly reside in user-specific `$HOME` / `~/.config` locations ignored by git.
 - **Generic Testing & Documentation Fixtures**: When writing unit tests, examples, or documentation, always use RFC standard placeholder domains (e.g. `user@example.com`, `developer@company.org`) and dummy session UUIDs. Never use real personal or customer email addresses or tokens.
 
 ## 3. Dynamic Portability & Path Handling
-- **No Hardcoded Machine Paths**: Never hardcode developer-specific absolute paths (such as `C:\Users\<user>`, `Z:\home\<user>`, `/home/<user>`).
-- **Dynamic Resolution**: Always resolve paths dynamically using OS environment variables (`%USERPROFILE%`, `%APPDATA%`, `Path.home()`, `os.environ`), dynamic UNC WSL2 queries, or drive enumeration.
-- **WSL Command Execution on Mapped Drives**: When invoking `wsl.exe` from Windows mapped network drives (such as `Z:`), always supply the explicit target directory using the `--cd` flag (e.g. `wsl --cd <path> <cmd>`) to prevent WSL path translation warnings, or prefer native Windows tooling (`git`).
+- **No Hardcoded Machine Paths**: Never hardcode developer-specific absolute paths (such as `/home/<user>`).
+- **Dynamic Resolution**: Always resolve paths dynamically using OS environment variables (`$HOME`, `Path.home()`, `os.environ`).
+- **Strict Linux & Docker Command Execution**: This project runs strictly in a WSL2 (Ubuntu Linux) and Docker environment. Provide only Linux-compatible commands and syntax (`bash`, `python3`, `docker`). Under NO circumstances include or invoke Windows-specific commands (such as CMD, PowerShell, `.bat`, `.ps1`), Windows path conventions (`C:\`, backslashes), or Windows host wrappers (`wsl.exe`).
 
 ## 4. Git Staging & Pre-Commit Hygiene
 - **Pre-Commit Inspection**: Before executing `git commit` or proposing changes, verify `git status` and ensure untracked caches (`__pycache__`, `.pytest_cache`), logs (`*.log`), temporary exports (`*.tmp`, `*.csv`), or user credentials are not staged.
@@ -22,7 +22,7 @@ These rules apply to all AI coding agents, assistants, and automated tools opera
 
 ## 5. Codebase Architecture & Integrity
 - **0% Idle CPU Overhead**: All background watchers and file polling loops must maintain smart stat-based change detection with zero unnecessary subprocess invocations or idle wakeups.
-- **Test Integrity**: Every modification to core engine, ledger, session discovery, or GUI modules must maintain 100% passing test coverage (`python -m unittest tests/test_all.py`).
+- **Test Integrity**: Every modification to core engine, ledger, session discovery, or GUI modules must maintain 100% passing test coverage (`python3 -m unittest tests/test_all.py`).
 
 ## 6. Architectural Discovery & Graphify Usage
 - **Graph-First Architecture Queries**: When exploring codebase structure, caller/callee relationships, cross-module dependencies, or evaluating change blast radius, always utilize Graphify (`graphify-out/graph.json` and Graphify MCP tools such as `query_graph`, `god_nodes`, `get_neighbors`) as the primary fast-path before performing ad-hoc file scans.

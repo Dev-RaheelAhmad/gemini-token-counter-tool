@@ -11,7 +11,7 @@ To protect user privacy and avoid accidental exposure of sensitive information, 
 1. **Zero Hardcoded Secrets**: Under NO circumstances should any API keys, OAuth tokens, client secrets, passwords, or credentials be added to code, tests, documentation, or commit messages.
 2. **No User Transcripts in Git**: Never commit personal `.jsonl` session files, `account_usage.json`, or local databases. All user state must strictly reside in user profile directories ignored by git.
 3. **Synthetic Test Fixtures Only**: When writing tests, always use RFC standard placeholder domains (`user@example.com`, `developer@company.org`) and synthetic session UUIDs.
-4. **Dynamic Portability**: Never hardcode developer-specific machine paths (`C:\Users\<user>`, `/home/<user>`). Always use dynamic resolution via environment variables (`Path.home()`, `%USERPROFILE%`, `%APPDATA%`).
+4. **Dynamic Portability**: Never hardcode developer-specific machine paths (`/home/<user>`). Always use dynamic resolution via environment variables (`Path.home()`, `os.environ`, `$HOME`).
 
 ---
 
@@ -23,10 +23,7 @@ git clone https://github.com/Dev-RaheelAhmad/gemini-token-counter-tool.git
 cd gemini-token-counter-tool
 
 # Create and activate a virtual environment (optional)
-python -m venv venv
-# Windows:
-.\venv\Scripts\activate
-# Linux / WSL:
+python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies and editable package
@@ -38,7 +35,7 @@ pip install -e .
 Before submitting any changes, verify that the entire test suite passes:
 
 ```bash
-python -m unittest tests/test_all.py
+python3 -m unittest tests/test_all.py
 ```
 
 All 160 unit tests must pass with 100% success rate.

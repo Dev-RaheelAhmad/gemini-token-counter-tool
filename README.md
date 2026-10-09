@@ -1,14 +1,14 @@
 # ⚡ Gemini Token Counter & Live Quota Monitor
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20WSL2-0078D6.svg?style=flat&logo=windows&logoColor=white)](https://microsoft.com)
+[![Platform](https://img.shields.io/badge/platform-Linux%20(WSL2)%20%7C%20Docker-FCC624.svg?style=flat&logo=linux&logoColor=black)](https://ubuntu.com)
 [![GUI Framework](https://img.shields.io/badge/UI-CustomTkinter-2563EB.svg?style=flat)](https://github.com/TomSchimansky/CustomTkinter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CPU Usage](https://img.shields.io/badge/Idle%20CPU-0.0%25-brightgreen.svg)]()
 
-A lightweight, high-performance Windows Desktop GUI monitor, floating Mini HUD, and terminal CLI tool for tracking **Google Gemini AI token consumption**, **reasoning/thinking tokens**, and **rolling rate limits** (5-hour and 7-day windows) in real time.
+A lightweight, high-performance Linux Desktop GUI monitor, floating Mini HUD, and terminal CLI tool for tracking **Google Gemini AI token consumption**, **reasoning/thinking tokens**, and **rolling rate limits** (5-hour and 7-day windows) in real time.
 
-Built specifically for developers using Google Antigravity, Gemini CLI, and Antigravity IDE across Windows native and WSL2 environments.
+Built specifically for developers using Google Antigravity, Gemini CLI, and Antigravity IDE across Ubuntu Linux (WSL2) and Docker environments.
 
 ---
 
@@ -21,14 +21,14 @@ Built specifically for developers using Google Antigravity, Gemini CLI, and Anti
 - **📊 Complete Token Breakdown**: Input / Prompt Tokens, Thinking / Reasoning Tokens (`<thought>` / `<thinking>` blocks), Output / Candidate Tokens, and Grand Totals with percentage ratios.
 - **⏳ Rolling Quota Gauges & Velocity**: Real-time 5-Hour burn rate and 7-Day weekly quotas with recovery countdown timers, color-coded alert thresholds (🟢 Green, 🟡 Amber, 🔴 Red), and instant burn velocity (`tok/hr`).
 - **🗕 Floating Mini HUD & 🫧 Floating Bubble**: Draggable, translucent Always-on-Top overlay widget with dynamic sizing, 1-click 7D expansion toggle, ultra-compact Floating Bubble mode with live hover report, and taskbar-free design.
-- **🗔 Windows System Tray**: Minimizes cleanly to the Windows notification tray with 1-click launch menus (Dashboard, Mini HUD, Floating Bubble) and live 5-line rich tooltip stats (5H & 7D recovery timers, remaining %, dedicated Active/All counts, and dynamic active user badge).
+- **🗔 System Tray & Status Notifications**: Minimizes cleanly to the desktop notification tray (when supported) with 1-click launch menus (Dashboard, Mini HUD, Floating Bubble) and live rich tooltip stats (5H & 7D recovery timers, remaining %, dedicated Active/All counts, and dynamic active user badge).
 - **📈 Interactive Usage Graphs & Analytics**: Visualizes token consumption over time (5-Hour rolling, 24-Hour hourly, 7-Day daily, 30-Day daily, Monthly, Yearly, and Turn-by-Turn Session Timelines) with interactive hover tooltips and CSV/JSON export.
-- **🔍 Session Explorer**: Search and filter past sessions by UUID, date, or **prompt snippet preview**. Right-click any session to copy ID, view usage graph, open directory in Explorer, or delete the session.
+- **🔍 Session Explorer**: Search and filter past sessions by UUID, date, or **prompt snippet preview**. Right-click any session to copy ID, view usage graph, open directory in file manager, or delete the session.
 - **🧹 Session Cleaner & Storage Compactor**: Deletes historical chat transcripts from disk and ledger (by age, keeping latest $N$, removing empty sessions, or cleaning all previous) to reclaim disk space.
-- **🐧 Automatic WSL2 & Multi-Drive Discovery**: Scans Windows native user profiles, all mounted Windows drives (C:, D:, Z:, etc.), and WSL2 UNC network paths (`\\wsl.localhost\<distro>` and `\\wsl$\<distro>`) directly from Windows with zero subprocess overhead.
+- **🐧 Automatic Session & Brain Discovery**: Discovers Antigravity session and transcript directories across Linux home paths (`~/.gemini/.../brain`), mounted container volumes, and WSL2 environment paths with zero idle subprocess overhead.
 - **📁 Custom Paths Manager**: Interactive path manager in Settings with folder browsing (`📁 Browse`), manual path entry, and instant re-scanning.
 - **⌨️ Keyboard Shortcuts**: `Ctrl+R` / `F5` (Refresh), `Ctrl+M` (Toggle Mini HUD), `Esc` (Minimize to Tray).
-- **🚀 Windows Startup Integration**: 1-click toggle in Settings to auto-launch silently on Windows startup.
+- **🚀 Background Daemon & CLI Automation**: Seamless background execution via terminal daemonizing, systemd user services, or automated shell scripts.
 
 ---
 
@@ -52,7 +52,7 @@ This application works completely out-of-the-box in standalone mode. However, fo
 ```text
   ┌─────────────────────────────────────────────────────────────┐
   │                 Antigravity JSONL Transcripts               │
-  │     (Windows Profiles, Mounted Drives, WSL2 UNC Paths)      │
+  │       (Linux User Home, Mounted Volumes, Brain Paths)       │
   └──────────────────────────────┬──────────────────────────────┘
                                  │ Incremental Byte-Offset Parsing
                                  ▼
@@ -76,7 +76,7 @@ This application works completely out-of-the-box in standalone mode. However, fo
   │     account_ledger.jsonl     │ │     Presentation Layer    │
   │      (Append-Only Log)       │ │ • Desktop GUI Dashboard   │
   │      account_usage.json      │ │ • Floating Mini HUD       │
-  │      (Database Snapshot)     │ │ • Windows System Tray     │
+  │      (Database Snapshot)     │ │ • System Tray (Optional)  │
   └──────────────────────────────┘ │ • Terminal CLI & ASCII    │
                                    └───────────────────────────┘
 ```
@@ -98,35 +98,51 @@ The monitor provides 3 dedicated viewing modes to fit every workflow:
 ## 🚀 Quick Setup & Installation
 
 ### Prerequisites
-- **Windows 10 / 11** or **WSL2**
-- **Python 3.10+** (Ensure *"Add Python to PATH"* is checked during Python installation)
+- **Ubuntu Linux (WSL2)** or **Docker**
+- **Python 3.10+**
+- **python3-tk** (required for desktop GUI: `sudo apt update && sudo apt install -y python3-tk`)
 - **Git** (for cloning)
 
 ---
 
-### Option 1: 1-Click Installer (Recommended)
-Double-click `setup_windows.bat` in the project directory. It will:
-1. Validate your Python environment.
-2. Install dependencies from `requirements.txt`.
-3. Create a **"Gemini Token Monitor"** shortcut on your Desktop and Start Menu.
-4. Launch the application immediately.
+### Option 1: Native Linux / WSL2 Setup
 
----
-
-### Option 2: Manual Installation
-```powershell
+```bash
 # 1. Clone repository
 git clone https://github.com/Dev-RaheelAhmad/gemini-token-counter-tool.git
 cd gemini-token-counter-tool
 
-# 2. Install dependencies
+# 2. Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 3. Launch Desktop GUI (silent mode without terminal window)
-start pythonw token_counter_gui.pyw
+# 4. Launch Desktop GUI Monitor
+python3 token_counter_gui.py
 
-# 4. (Optional) Create Desktop shortcut
-powershell -ExecutionPolicy Bypass -File create_shortcut.ps1
+# Or launch GUI in background
+python3 token_counter_gui.py &
+```
+
+---
+
+### Option 2: Docker Setup (Headless / Containerized)
+
+For containerized or headless environments, mount your Antigravity user transcripts directory:
+
+```bash
+# Run terminal CLI / live watcher inside Docker
+docker run -it --rm \
+  -v ~/.gemini:/root/.gemini:ro \
+  -v ~/.gemini-token-counter:/root/.gemini-token-counter \
+  -w /app \
+  -v "$PWD":/app \
+  python:3.11-slim bash -c "
+    pip install -r requirements.txt && \
+    python3 token_counter.py --watch
+  "
 ```
 
 ---
@@ -202,7 +218,7 @@ python token_counter.py --gui
 
 ## ⚙️ Configuration Reference
 
-Settings are saved automatically per-user in `%APPDATA%\GeminiTokenCounter\config.json`:
+Settings are saved automatically per-user in `~/.gemini-token-counter/config.json` (or `~/.config/GeminiTokenCounter/config.json`):
 
 | Key | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
@@ -261,21 +277,15 @@ gemini-token-counter-tool/
 │   ├── app.py                    # Main dashboard application window
 │   ├── cleaner_dialog.py         # Session storage cleaner & compactor dialog
 │   ├── mini_hud.py               # Translucent floating Always-on-Top widget
-│   ├── tray.py                   # Windows system tray integration
-│   └── window_utils.py           # Native window positioning and geometry manager
+│   ├── tray.py                   # System tray integration (optional desktop support)
+│   └── window_utils.py           # Window positioning and geometry manager
 ├── tests/
 │   └── test_all.py               # Unit test suite
-├── create_shortcut.ps1           # Desktop & Start Menu shortcut generator
-├── install_shortcut.bat          # 1-click shortcut installer
 ├── LICENSE                       # MIT License
 ├── README.md                     # Documentation
 ├── requirements.txt              # Minimal Python dependencies
-├── run_gui.bat                   # Launcher batch script
-├── run_silent.vbs                # Headless background launcher
-├── setup_windows.bat             # 1-click installer and setup script
 ├── token_counter.py              # CLI utility and standalone entry point
-├── token_counter_gui.py          # Desktop GUI entry point (console mode)
-└── token_counter_gui.pyw         # Desktop GUI entry point (silent mode)
+└── token_counter_gui.py          # Desktop GUI entry point
 ```
 
 ---
