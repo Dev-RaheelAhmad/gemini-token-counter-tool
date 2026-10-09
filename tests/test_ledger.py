@@ -517,14 +517,15 @@ class TestLedgerCompaction(unittest.TestCase):
         self.assertEqual(compacted, recent_records)
 
     def test_compact_time_series_records_consolidates_old_by_day(self):
-        now = datetime.now(timezone.utc)
-        day40_1 = now - timedelta(days=40, hours=1)
-        day40_2 = now - timedelta(days=40, hours=2)
-        day40_3 = now - timedelta(days=40, hours=3)
-        day40_4 = now - timedelta(days=40, hours=4)
-        day41_1 = now - timedelta(days=41, hours=1)
-        day41_2 = now - timedelta(days=41, hours=2)
-        today_rec = now - timedelta(hours=1)
+        # Anchor base to noon UTC to ensure subtracting small hours never crosses a calendar day boundary
+        base = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+        day40_1 = base - timedelta(days=40, hours=1)
+        day40_2 = base - timedelta(days=40, hours=2)
+        day40_3 = base - timedelta(days=40, hours=3)
+        day40_4 = base - timedelta(days=40, hours=4)
+        day41_1 = base - timedelta(days=41, hours=1)
+        day41_2 = base - timedelta(days=41, hours=2)
+        today_rec = base - timedelta(hours=1)
 
         input_records = [
             (day41_2, 10, 5, 2),

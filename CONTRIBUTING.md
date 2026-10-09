@@ -52,11 +52,11 @@ All 160 unit tests must pass with 100% success rate.
 
 ## 🚀 Submitting a Pull Request
 
-1. Fork the repository and create your branch from `main`:
+1. Fork the repository and create your branch from `development`:
    ```bash
    git checkout -b feature/your-feature-name
    ```
 2. Make your modifications, adhering to the coding and confidentiality standards.
-3. Run the unit test suite (`python -m unittest tests/test_all.py`).
+3. Run the unit test suite (`python3 -m unittest tests/test_all.py`).
 4. Commit your changes with a clear, concise commit message.
-5. Push to your fork and open a Pull Request against the `main` branch.
+5. Push to your fork and open a Pull Request against the `development` branch.

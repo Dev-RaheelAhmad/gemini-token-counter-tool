@@ -153,45 +153,45 @@ The tool provides a comprehensive CLI for headless environments, CI/CD, scriptin
 
 ```bash
 # 1. Current active conversation (Default)
-python token_counter.py
+python3 token_counter.py
 
 # 2. Active Google Account rolling quota
-python token_counter.py --account
+python3 token_counter.py --account
 
 # 3. Specific Google Account rolling quota
-python token_counter.py --account user@example.com
+python3 token_counter.py --account user@example.com
 
 # 4. Terminal ASCII Usage Graph (5h default, 24h, 7d, 30d, month, year, session)
-python token_counter.py --graph
-python token_counter.py --history 24h
-python token_counter.py --history 7d
-python token_counter.py --history month
+python3 token_counter.py --graph
+python3 token_counter.py --history 24h
+python3 token_counter.py --history 7d
+python3 token_counter.py --history month
 
 # 5. Live refreshing terminal dashboard
-python token_counter.py --watch
-python token_counter.py --account --watch --interval 2
+python3 token_counter.py --watch
+python3 token_counter.py --account --watch --interval 2
 
 # 6. Device grand total (across all accounts and historical chats)
-python token_counter.py --all
+python3 token_counter.py --all
 
 # 7. Specific session ID
-python token_counter.py --session <SESSION_ID>
+python3 token_counter.py --session <SESSION_ID>
 
 # 8. Machine-readable JSON output (for scripting/piping)
-python token_counter.py --json
-python token_counter.py --account --json
-python token_counter.py --history 7d --json
+python3 token_counter.py --json
+python3 token_counter.py --account --json
+python3 token_counter.py --history 7d --json
 
 # 9. Storage Cleaner & Compactor
-python token_counter.py --disk-usage
-python token_counter.py --clean-older-than 7
-python token_counter.py --keep-latest 5
-python token_counter.py --delete-session <SESSION_ID>
-python token_counter.py --clean-empty
-python token_counter.py --clean-previous
+python3 token_counter.py --disk-usage
+python3 token_counter.py --clean-older-than 7
+python3 token_counter.py --keep-latest 5
+python3 token_counter.py --delete-session <SESSION_ID>
+python3 token_counter.py --clean-empty
+python3 token_counter.py --clean-previous
 
 # 10. Launch Desktop GUI from terminal
-python token_counter.py --gui
+python3 token_counter.py --gui
 ```
 
 ### CLI Options Reference
@@ -247,7 +247,7 @@ Settings are saved automatically per-user in `~/.gemini-token-counter/config.jso
 The test suite validates configuration management, token estimation, rate-limit sliding windows, multi-account isolation, append-only event logging, analytics aggregation, cleaner pruning, system tray tooltips, and GUI components:
 
 ```bash
-python -m unittest tests/test_all.py
+python3 -m unittest tests/test_all.py
 ```
 
 ---
