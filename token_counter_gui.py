@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gemini Token Counter - Windows Desktop GUI & Live Monitor
+Gemini Token Counter - Desktop GUI & Live Monitor
 """
 import os
 import sys

@@ -19,51 +19,57 @@ from gui.cleaner_dialog import CleanerDialog
 from gui.window_utils import apply_windows_dark_titlebar, center_window_on_screen, cancel_all_pending_after_events, get_screen_work_area, get_window_scale
 
 
-def get_startup_shortcut_path() -> Optional[Path]:
-    if "APPDATA" in os.environ:
-        return Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "Gemini Token Monitor.lnk"
-    return None
+def get_startup_desktop_entry_path() -> Path:
+    return Path.home() / ".config" / "autostart" / "gemini-token-monitor.desktop"
 
 
 def is_startup_enabled() -> bool:
-    p = get_startup_shortcut_path()
-    return p.exists() if p else False
+    if os.name == "nt" and "APPDATA" in os.environ:
+        p = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "Gemini Token Monitor.lnk"
+        return p.exists()
+    return get_startup_desktop_entry_path().exists()
 
 
 def set_startup_enabled(enable: bool):
-    p = get_startup_shortcut_path()
-    if not p:
-        return
     current_state = is_startup_enabled()
     if current_state == enable:
         return  # No change required, zero overhead
 
     def _do_update():
-        if enable:
-            try:
-                import subprocess
-                root_dir = Path(__file__).parent.parent
-                target_pyw = (root_dir / "token_counter_gui.pyw").resolve()
-                ps_code = (
-                    f"$WshShell = New-Object -comObject WScript.Shell; "
-                    f"$s = $WshShell.CreateShortcut('{str(p)}'); "
-                    f"$s.TargetPath = 'pythonw.exe'; "
-                    f"$s.Arguments = '\"" + str(target_pyw).replace("'", "''") + "\"'; "
-                    f"$s.WorkingDirectory = '\"" + str(root_dir).replace("'", "''") + "\"'; "
-                    f"$s.Description = 'Gemini Token Monitor Startup Service'; "
-                    f"$s.Save()"
-                )
-                creationflags = 0x08000000 if os.name == "nt" else 0
-                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", ps_code],
-                               capture_output=True, creationflags=creationflags)
-            except Exception:
-                pass
+        if os.name != "nt":
+            entry_path = get_startup_desktop_entry_path()
+            if enable:
+                try:
+                    entry_path.parent.mkdir(parents=True, exist_ok=True)
+                    root_dir = Path(__file__).parent.parent
+                    script_path = (root_dir / "token_counter_gui.py").resolve()
+                    content = (
+                        "[Desktop Entry]\n"
+                        "Type=Application\n"
+                        "Name=Gemini Token Monitor\n"
+                        f"Exec=python3 {script_path}\n"
+                        "Icon=utilities-system-monitor\n"
+                        "Terminal=false\n"
+                        "Categories=Utility;\n"
+                    )
+                    entry_path.write_text(content, encoding="utf-8")
+                except Exception:
+                    pass
+            else:
+                try:
+                    if entry_path.exists():
+                        entry_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
         else:
-            try:
-                if p.exists():
+            p = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "Gemini Token Monitor.lnk" if "APPDATA" in os.environ else None
+            if not p:
+                return
+            if not enable and p.exists():
+                try:
                     p.unlink(missing_ok=True)
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
     import threading
     threading.Thread(target=_do_update, daemon=True, name="StartupShortcutWorker").start()
@@ -1677,11 +1683,11 @@ class GeminiTokenCounterApp(ctk.CTk):
             show_limits_cb.deselect()
         show_limits_cb.pack(anchor="w", padx=14, pady=(2, 6))
 
-        # Windows Startup Checkbox
+        # System Startup Checkbox
         startup_var = ctk.BooleanVar(value=is_startup_enabled())
         startup_cb = ctk.CTkCheckBox(
             sec1_frame,
-            text="Launch Gemini Token Monitor automatically on Windows Startup",
+            text="Launch Gemini Token Monitor automatically on system startup",
             variable=startup_var,
             onvalue=True,
             offvalue=False,
@@ -1816,7 +1822,7 @@ class GeminiTokenCounterApp(ctk.CTk):
 
         ctk.CTkLabel(
             sec3_frame,
-            text="📁 DISCOVERED & CUSTOM .GEMINI PATHS (WINDOWS & WSL2)",
+            text="📁 DISCOVERED & CUSTOM .GEMINI PATHS (LINUX, WSL2 & VOLUMES)",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=("#475569", "#94a3b8")
         ).pack(anchor="w", padx=14, pady=(10, 6))
@@ -1886,7 +1892,7 @@ class GeminiTokenCounterApp(ctk.CTk):
 
         custom_path_entry = ctk.CTkEntry(
             add_row,
-            placeholder_text="Enter or paste custom path (Windows / WSL UNC / Drive)...",
+            placeholder_text="Enter or paste custom path (Linux / WSL / Volume)...",
             height=32,
             fg_color=("white", "#161b26"),
             border_color=("#cbd5e1", "#2d3748"),
