@@ -285,7 +285,8 @@ gemini-token-counter-tool/
 ├── README.md                     # Documentation
 ├── requirements.txt              # Minimal Python dependencies
 ├── token_counter.py              # CLI utility and standalone entry point
-└── token_counter_gui.py          # Desktop GUI entry point
+├── token_counter_gui.py          # Desktop GUI entry point
+└── token_counter_gui.pyw         # Desktop GUI entry point (windowless runner)
 ```
 
 ---
